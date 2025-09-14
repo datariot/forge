@@ -61,9 +61,12 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 
 	"github.com/datariot/forge/config"
-	"github.com/datariot/forge/health"
+	forgeHealth "github.com/datariot/forge/health"
 )
 
 // Component represents a service component that can be started and stopped.
@@ -123,9 +126,9 @@ type Registrar interface {
 // Example:
 //
 //	func (s *UserService) HealthChecks() []health.Check {
-//		return []health.Check{
-//			health.NewBasicCheck(
-//				health.DefaultCheckConfig("database"),
+//		return []forgeHealth.Check{
+//			forgeHealth.NewBasicCheck(
+//				forgeHealth.DefaultCheckConfig("database"),
 //				func(ctx context.Context) error {
 //					return s.db.PingContext(ctx)
 //				},
@@ -138,7 +141,7 @@ type Registrar interface {
 type HealthContributor interface {
 	// HealthChecks returns a slice of health checks that this component provides.
 	// These checks will be automatically registered during application startup.
-	HealthChecks() []health.Check
+	HealthChecks() []forgeHealth.Check
 }
 
 // Bundle represents a reusable collection of functionality that can be added to an app.
@@ -205,7 +208,8 @@ type App struct {
 	// Core managers
 	logging        *LoggingManager
 	observability  *ObservabilityManager
-	healthRegistry *health.Registry
+	healthRegistry *forgeHealth.Registry
+	grpcHealthServer *health.Server
 
 	// Servers
 	grpcServer   *grpc.Server
@@ -271,8 +275,11 @@ func New(options ...AppOption) (*App, error) {
 	// Initialize health registry
 	if app.healthRegistry == nil {
 		healthLogger := NewHealthLogger(app.logging)
-		app.healthRegistry = health.NewRegistry(healthLogger)
+		app.healthRegistry = forgeHealth.NewRegistry(healthLogger)
 	}
+
+	// Initialize gRPC health server
+	app.grpcHealthServer = health.NewServer()
 
 	return app, nil
 }
@@ -340,7 +347,7 @@ func WithHealthContributor(contributor HealthContributor) AppOption {
 		app.startupHooks = append(app.startupHooks, func(ctx context.Context, app *App) error {
 			checks := contributor.HealthChecks()
 			for _, check := range checks {
-				config := health.DefaultCheckConfig(check.Name())
+				config := forgeHealth.DefaultCheckConfig(check.Name())
 				if err := app.healthRegistry.Register(check, config); err != nil {
 					return fmt.Errorf("failed to register health check %s: %w", check.Name(), err)
 				}
@@ -385,7 +392,7 @@ func (a *App) Logger() *LoggingManager {
 }
 
 // HealthRegistry returns the health registry.
-func (a *App) HealthRegistry() *health.Registry {
+func (a *App) HealthRegistry() *forgeHealth.Registry {
 	return a.healthRegistry
 }
 
@@ -505,12 +512,14 @@ func (a *App) Start(ctx context.Context) error {
 		go func() {
 			time.Sleep(a.config.ReadinessInitialDelay)
 			a.healthRegistry.SetReady(true)
+			a.updateGRPCHealthStatus()
 			logger.Info().
 				Dur("delay", a.config.ReadinessInitialDelay).
 				Msg("Service marked as ready")
 		}()
 	} else {
 		a.healthRegistry.SetReady(true)
+		a.updateGRPCHealthStatus()
 		logger.Info().Msg("Service marked as ready")
 	}
 
@@ -537,6 +546,7 @@ func (a *App) Stop(ctx context.Context) error {
 
 	// Mark service as not ready immediately
 	a.healthRegistry.SetReady(false)
+	a.updateGRPCHealthStatus()
 
 	// Create shutdown orchestrator with proper timeout
 	orchestrator := NewShutdownOrchestrator(a.config.ShutdownTimeout)
@@ -620,10 +630,18 @@ func (a *App) Stop(ctx context.Context) error {
 
 // startGRPCServer creates and starts the gRPC server.
 func (a *App) startGRPCServer(ctx context.Context) error {
-	// Create gRPC server (will implement server builder later)
+	// Create gRPC server
 	a.grpcServer = grpc.NewServer()
 
-	// Register services
+	// Register standard gRPC health service
+	grpc_health_v1.RegisterHealthServer(a.grpcServer, a.grpcHealthServer)
+
+	// Enable gRPC reflection if configured
+	if a.config.ShouldEnableReflection() {
+		reflection.Register(a.grpcServer)
+	}
+
+	// Register user services
 	for i, registrar := range a.registrars {
 		if err := registrar.RegisterGRPC(a.grpcServer); err != nil {
 			return fmt.Errorf("failed to register gRPC service %d (%T): %w", i, registrar, err)
@@ -723,5 +741,35 @@ func (a *App) handleLive(w http.ResponseWriter, r *http.Request) {
 		w.Write(data)
 	} else {
 		w.Write([]byte(`{"status":"error","message":"failed to serialize liveness status"}`))
+	}
+}
+
+// updateGRPCHealthStatus synchronizes the Forge health registry status with the gRPC health service.
+// This ensures that gRPC health checks reflect the same status as HTTP health endpoints.
+func (a *App) updateGRPCHealthStatus() {
+	if a.grpcHealthServer == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Check overall readiness status
+	readinessStatus := a.healthRegistry.CheckReadiness(ctx)
+
+	// Update overall service status
+	if readinessStatus.IsReady() {
+		a.grpcHealthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	} else {
+		a.grpcHealthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+	}
+
+	// Update individual service statuses based on individual health checks
+	for checkName, checkResult := range readinessStatus.Details {
+		if checkResult.IsHealthy() {
+			a.grpcHealthServer.SetServingStatus(checkName, grpc_health_v1.HealthCheckResponse_SERVING)
+		} else {
+			a.grpcHealthServer.SetServingStatus(checkName, grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+		}
 	}
 }
