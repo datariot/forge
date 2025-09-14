@@ -668,23 +668,26 @@ func (a *App) startGRPCServer(ctx context.Context) error {
 	return nil
 }
 
-// startHTTPServer creates and starts the HTTP health server.
+// startHTTPServer creates and starts the enhanced HTTP server.
 func (a *App) startHTTPServer(ctx context.Context) error {
-	// Create HTTP server (will implement proper health server later)
-	mux := http.NewServeMux()
-
-	// Basic health endpoint
-	mux.HandleFunc("/health", a.handleHealth)
-	mux.HandleFunc("/health/ready", a.handleReady)
-	mux.HandleFunc("/health/live", a.handleLive)
-
-	a.httpServer = &http.Server{
-		Addr:         a.config.HTTPAddr,
-		Handler:      mux,
-		ReadTimeout:  a.config.HTTPReadTimeout,
-		WriteTimeout: a.config.HTTPWriteTimeout,
-		IdleTimeout:  a.config.HTTPIdleTimeout,
+	// Create enhanced HTTP server configuration
+	httpConfig := HTTPServerConfig{
+		EnableCORS:           a.config.EnableCORS,
+		CORSOrigins:          a.config.CORSOrigins,
+		CORSMethods:          []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		CORSHeaders:          []string{"Content-Type", "Authorization"},
+		CORSCredentials:      false,
+		EnableMetrics:        a.config.EnableMetrics,
+		MetricsPath:          "/metrics",
+		HealthPathPrefix:     "/health",
+		EnableRequestLogging: a.config.EnableRequestLogging,
+		LogRequestBody:       false,
+		LogResponseBody:      false,
 	}
+
+	// Build enhanced HTTP server
+	builder := NewHTTPServerBuilder(a, httpConfig)
+	a.httpServer = builder.Build()
 
 	// Start server in goroutine
 	go func() {

@@ -115,6 +115,12 @@ type BaseConfig struct {
 	// Optional features
 	EnablePprof      bool `yaml:"enable_pprof" env:"ENABLE_PPROF"`
 	EnableReflection bool `yaml:"enable_reflection" env:"ENABLE_REFLECTION"`
+
+	// HTTP server enhancements
+	EnableCORS           bool     `yaml:"enable_cors" env:"ENABLE_CORS"`
+	CORSOrigins          []string `yaml:"cors_origins" env:"CORS_ORIGINS"`
+	EnableMetrics        bool     `yaml:"enable_metrics" env:"ENABLE_METRICS"`
+	EnableRequestLogging bool     `yaml:"enable_request_logging" env:"ENABLE_REQUEST_LOGGING"`
 }
 
 // DefaultBaseConfig returns a BaseConfig with sensible defaults.
@@ -154,6 +160,10 @@ func DefaultBaseConfig() BaseConfig {
 		HTTPIdleTimeout:       60 * time.Second,
 		EnablePprof:           false,
 		EnableReflection:      false, // Set to true in development via env/config
+		EnableCORS:            false,
+		CORSOrigins:           []string{},
+		EnableMetrics:         true,
+		EnableRequestLogging:  true,
 	}
 }
 
