@@ -4,14 +4,14 @@
 //   - Use the PostgreSQL bundle for database connectivity
 //   - Implement database-backed business logic
 //   - Provide database health checks
-//   - Handle database migrations
 //   - Use proper transaction patterns
+//   - Demonstrate connection pool management
 //
 // # Prerequisites
 //
 // 1. PostgreSQL server running locally
 // 2. Database created: createdb forge_example
-// 3. Migration files in ./migrations/ directory
+// 3. Database schema created using your preferred migration tool
 //
 // # Run the service
 //
@@ -43,8 +43,6 @@ type ServiceConfig struct {
 
 	// PostgreSQL configuration
 	DatabaseURL     string `yaml:"database_url" env:"DATABASE_URL"`
-	MigrationsPath  string `yaml:"migrations_path" env:"MIGRATIONS_PATH"`
-	AutoMigrate     bool   `yaml:"auto_migrate" env:"AUTO_MIGRATE"`
 	MaxConnections  int    `yaml:"max_connections" env:"MAX_CONNECTIONS"`
 }
 
@@ -52,8 +50,6 @@ type ServiceConfig struct {
 func DefaultServiceConfig() ServiceConfig {
 	return ServiceConfig{
 		BaseConfig:     config.DefaultBaseConfig(),
-		MigrationsPath: "file://./migrations",
-		AutoMigrate:    true,
 		MaxConnections: 25,
 	}
 }
@@ -89,9 +85,9 @@ func NewUserService(config *ServiceConfig, db *sql.DB) *UserService {
 func (s *UserService) Start(ctx context.Context) error {
 	log.Printf("UserService started with database connection")
 
-	// Example: Verify our tables exist after migrations
+	// Example: Verify our tables exist (assumes schema is already created)
 	if err := s.verifySchema(); err != nil {
-		return fmt.Errorf("schema verification failed: %w", err)
+		log.Printf("Warning: Schema verification failed (database may need initialization): %v", err)
 	}
 
 	return nil
@@ -129,7 +125,7 @@ func (s *UserService) verifySchema() error {
 	}
 
 	if !exists {
-		log.Println("Warning: 'users' table does not exist - migrations may not have run")
+		log.Println("Warning: 'users' table does not exist - please create schema using your migration tool")
 	}
 
 	return nil
@@ -225,8 +221,6 @@ func main() {
 	// Create PostgreSQL bundle
 	pgConfig := postgresql.Config{
 		DatabaseURL:        cfg.DatabaseURL,
-		MigrationsPath:     cfg.MigrationsPath,
-		AutoMigrate:        cfg.AutoMigrate,
 		MaxOpenConns:       cfg.MaxConnections,
 		MaxIdleConns:       cfg.MaxConnections / 2,
 		ConnMaxLifetime:    30 * time.Minute,
@@ -256,6 +250,10 @@ func main() {
 
 	// Run the application
 	log.Printf("Starting %s with PostgreSQL integration...", cfg.ServiceName)
+	log.Printf("Note: Database schema should be created using migration tools during deployment")
+	log.Printf("Example: golang-migrate -path ./migrations -database %s up",
+		"postgres://user:pass@localhost:5432/dbname")
+
 	if err := app.Run(context.Background()); err != nil {
 		log.Fatalf("Application failed: %v", err)
 	}
