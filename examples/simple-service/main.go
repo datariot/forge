@@ -1,3 +1,23 @@
+// Package main demonstrates a complete Forge microservice implementation.
+//
+// This example shows how to:
+//   - Create service-specific configuration by embedding BaseConfig
+//   - Implement the Component interface for business logic
+//   - Provide health checks via HealthContributor interface
+//   - Configure and run a Forge application
+//
+// The service includes:
+//   - Custom configuration with validation
+//   - Component lifecycle management
+//   - Health check integration
+//   - Structured logging
+//   - Graceful shutdown handling
+//
+// Run with: go run main.go
+// Health endpoints available at:
+//   - http://localhost:8081/health
+//   - http://localhost:8081/health/live
+//   - http://localhost:8081/health/ready
 package main
 
 import (
@@ -9,7 +29,9 @@ import (
 	"github.com/datariot/forge/health"
 )
 
-// SimpleConfig extends BaseConfig with service-specific configuration
+// SimpleConfig extends BaseConfig with service-specific configuration.
+// This demonstrates the recommended pattern for service configuration:
+// embed BaseConfig and add service-specific fields.
 type SimpleConfig struct {
 	config.BaseConfig `yaml:",inline"`
 
@@ -35,7 +57,9 @@ func (c *SimpleConfig) Validate() error {
 	return nil
 }
 
-// SimpleComponent implements the framework interfaces
+// SimpleComponent implements the framework interfaces.
+// This demonstrates how to implement Component and HealthContributor
+// interfaces for integration with the Forge framework.
 type SimpleComponent struct {
 	config *SimpleConfig
 }

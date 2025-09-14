@@ -1,3 +1,53 @@
+// Package framework provides the core application lifecycle management for Forge microservices.
+//
+// The framework package implements Clean Architecture principles with a component-based design
+// that enables building production-ready microservices with built-in observability, health checks,
+// graceful shutdown, and lifecycle management.
+//
+// # Basic Usage
+//
+// Create a service by implementing the Component interface and using the App builder:
+//
+//	cfg := config.DefaultBaseConfig()
+//	cfg.ServiceName = "my-service"
+//
+//	myComponent := &MyComponent{}
+//
+//	app, err := framework.New(
+//		framework.WithConfig(&cfg),
+//		framework.WithVersion("1.0.0"),
+//		framework.WithComponent(myComponent),
+//	)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	if err := app.Run(context.Background()); err != nil {
+//		log.Fatal(err)
+//	}
+//
+// # Architecture
+//
+// The framework follows Clean Architecture with these key concepts:
+//
+//   - Components: Your business logic implementing Component interface
+//   - Bundles: Pre-built integrations (PostgreSQL, Redis, etc.)
+//   - App: Main application orchestrating lifecycle and dependencies
+//   - Health: Comprehensive health check system with liveness/readiness
+//   - Observability: Built-in OpenTelemetry tracing and metrics
+//
+// # Lifecycle Management
+//
+// The App handles sophisticated startup and shutdown orchestration:
+//
+//  1. Initialize observability (tracing, metrics)
+//  2. Initialize bundles in registration order
+//  3. Execute startup hooks
+//  4. Start gRPC and HTTP servers
+//  5. Start components in registration order
+//  6. Mark service as ready
+//
+// Shutdown happens in reverse order with proper timeout handling and graceful termination.
 package framework
 
 import (
@@ -17,34 +67,136 @@ import (
 )
 
 // Component represents a service component that can be started and stopped.
+// Components are the primary way to integrate your business logic with the Forge framework.
+//
+// Components are started in registration order during application startup and
+// stopped in reverse order during graceful shutdown. Each component should
+// handle its own resource management and cleanup.
+//
+// Example implementation:
+//
+//	type UserService struct {
+//		db *sql.DB
+//	}
+//
+//	func (s *UserService) Start(ctx context.Context) error {
+//		// Initialize connections, start background workers, etc.
+//		return s.db.PingContext(ctx)
+//	}
+//
+//	func (s *UserService) Stop(ctx context.Context) error {
+//		// Clean up resources, stop workers, close connections
+//		return s.db.Close()
+//	}
 type Component interface {
+	// Start initializes the component and starts any background processes.
+	// This method is called during application startup after all bundles
+	// have been initialized and servers have been started.
 	Start(ctx context.Context) error
+
+	// Stop gracefully shuts down the component and cleans up resources.
+	// This method is called during application shutdown with a timeout context.
+	// Components should respect the context deadline for graceful termination.
 	Stop(ctx context.Context) error
 }
 
 // Registrar represents a service that can register gRPC handlers.
+// Components that expose gRPC services should implement this interface
+// to register their handlers with the framework's gRPC server.
+//
+// Example:
+//
+//	func (s *UserService) RegisterGRPC(server *grpc.Server) error {
+//		userpb.RegisterUserServiceServer(server, s)
+//		return nil
+//	}
 type Registrar interface {
+	// RegisterGRPC registers gRPC service handlers with the provided server.
+	// This method is called during application startup before the gRPC server starts.
 	RegisterGRPC(server *grpc.Server) error
 }
 
 // HealthContributor represents a service that contributes health checks.
+// Components implementing this interface can provide health checks that
+// will be automatically registered with the health registry.
+//
+// Example:
+//
+//	func (s *UserService) HealthChecks() []health.Check {
+//		return []health.Check{
+//			health.NewBasicCheck(
+//				health.DefaultCheckConfig("database"),
+//				func(ctx context.Context) error {
+//					return s.db.PingContext(ctx)
+//				},
+//				func(ctx context.Context) error {
+//					return s.db.PingContext(ctx)
+//				},
+//			),
+//		}
+//	}
 type HealthContributor interface {
+	// HealthChecks returns a slice of health checks that this component provides.
+	// These checks will be automatically registered during application startup.
 	HealthChecks() []health.Check
 }
 
 // Bundle represents a reusable collection of functionality that can be added to an app.
+// Bundles encapsulate common integrations like database connections, message queues,
+// monitoring, etc. They are initialized in registration order during startup.
+//
+// Example bundle for PostgreSQL integration:
+//
+//	type PostgreSQLBundle struct {
+//		config *DatabaseConfig
+//	}
+//
+//	func (b *PostgreSQLBundle) Name() string {
+//		return "postgresql"
+//	}
+//
+//	func (b *PostgreSQLBundle) Initialize(app *App) error {
+//		db, err := sql.Open("postgres", b.config.URL)
+//		if err != nil {
+//			return err
+//		}
+//		// Add database to app context or register as component
+//		return nil
+//	}
 type Bundle interface {
+	// Name returns a unique identifier for this bundle.
 	Name() string
+
+	// Initialize sets up the bundle's functionality within the application.
+	// This method is called during application startup before components are started.
 	Initialize(app *App) error
 }
 
 // StartupHook is called during application startup.
+// Use startup hooks for custom initialization logic that needs to run
+// after bundles are initialized but before the service is marked as ready.
 type StartupHook func(ctx context.Context, app *App) error
 
 // ShutdownHook is called during application shutdown.
+// Use shutdown hooks for custom cleanup logic that needs to run
+// before components are stopped. Hooks are executed in reverse registration order.
 type ShutdownHook func(ctx context.Context, app *App) error
 
 // App represents the main service application with lifecycle management.
+// App orchestrates the entire application lifecycle including initialization,
+// startup, runtime, and graceful shutdown of all registered components and services.
+//
+// The App follows a sophisticated startup sequence:
+//   1. Configuration validation
+//   2. Logging and observability initialization
+//   3. Bundle initialization (in registration order)
+//   4. Startup hook execution
+//   5. gRPC and HTTP server startup
+//   6. Component startup (in registration order)
+//   7. Health check registration and readiness marking
+//
+// Shutdown happens in reverse order with proper timeout handling.
+// The App ensures all resources are cleaned up gracefully on termination.
 type App struct {
 	config  *config.BaseConfig
 	version string

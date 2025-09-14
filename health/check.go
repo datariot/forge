@@ -1,3 +1,57 @@
+// Package health provides comprehensive health check functionality for Forge microservices.
+//
+// The health package implements Kubernetes-compatible health checks with support for
+// both liveness and readiness probes. It provides concurrent health check execution,
+// configurable timeouts, and detailed status reporting.
+//
+// # Health Check Types
+//
+// The package supports two types of health checks:
+//   - Liveness: Indicates whether the application is alive and responding
+//   - Readiness: Indicates whether the application is ready to serve traffic
+//
+// # Basic Usage
+//
+// Implement the Check interface for your dependencies:
+//
+//	type DatabaseCheck struct {
+//		db *sql.DB
+//	}
+//
+//	func (c *DatabaseCheck) Name() string {
+//		return "database"
+//	}
+//
+//	func (c *DatabaseCheck) Liveness(ctx context.Context) error {
+//		return c.db.PingContext(ctx)
+//	}
+//
+//	func (c *DatabaseCheck) Readiness(ctx context.Context) error {
+//		// More comprehensive readiness check
+//		if err := c.db.PingContext(ctx); err != nil {
+//			return err
+//		}
+//		// Check if migrations are up to date, etc.
+//		return nil
+//	}
+//
+// Register checks with the health registry:
+//
+//	registry := health.NewRegistry(logger)
+//	config := health.DefaultCheckConfig("database")
+//	registry.Register(&DatabaseCheck{db: db}, config)
+//
+// # HTTP Endpoints
+//
+// The framework automatically exposes health endpoints:
+//   - /health: Combined liveness and readiness status
+//   - /health/live: Liveness probe endpoint
+//   - /health/ready: Readiness probe endpoint
+//
+// # Concurrent Execution
+//
+// All health checks are executed concurrently with proper timeout handling.
+// Failed non-required checks don't affect overall service health.
 package health
 
 import (
@@ -8,6 +62,13 @@ import (
 // Check represents a health check that can be performed on a service dependency.
 // Each check supports both liveness (is the dependency alive) and readiness
 // (is the dependency ready to serve requests) semantics.
+//
+// Implementations should be lightweight and fast, especially for liveness checks.
+// Readiness checks can be more comprehensive but should still complete within
+// the configured timeout.
+//
+// Health checks are executed concurrently by the health registry, so implementations
+// must be thread-safe.
 type Check interface {
 	// Name returns a unique name for this health check.
 	Name() string
@@ -25,6 +86,14 @@ type Check interface {
 }
 
 // CheckConfig contains common configuration for health checks.
+// Use DefaultCheckConfig() as a starting point and customize as needed.
+//
+// The Required field determines whether a failed check affects overall service health:
+//   - Required=true: Service is unhealthy if this check fails
+//   - Required=false: Check failure is logged but doesn't affect service health
+//
+// Timeout applies to both liveness and readiness checks for this specific check.
+// The health registry also enforces an overall timeout for all checks combined.
 type CheckConfig struct {
 	// Name is the unique name of the health check
 	Name string
@@ -44,6 +113,14 @@ type CheckConfig struct {
 }
 
 // DefaultCheckConfig returns a CheckConfig with sensible defaults.
+// All checks are marked as required by default with a 5-second timeout
+// and 30-second check interval for periodic monitoring.
+//
+// Customize the returned config as needed:
+//
+//	config := health.DefaultCheckConfig("database")
+//	config.Required = false  // Make non-critical
+//	config.Timeout = 10 * time.Second  // Longer timeout
 func DefaultCheckConfig(name string) CheckConfig {
 	return CheckConfig{
 		Name:         name,

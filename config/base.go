@@ -1,3 +1,47 @@
+// Package config provides configuration management for Forge microservices.
+//
+// The config package implements environment-based configuration with comprehensive
+// validation, sensible defaults, and support for multiple deployment environments.
+//
+// # Basic Usage
+//
+// Embed BaseConfig in your service-specific configuration:
+//
+//	type MyServiceConfig struct {
+//		config.BaseConfig `yaml:",inline"`
+//
+//		// Service-specific fields
+//		DatabaseURL string `yaml:"database_url" env:"DATABASE_URL"`
+//		APIKey      string `yaml:"api_key" env:"API_KEY"`
+//	}
+//
+//	func LoadConfig() (*MyServiceConfig, error) {
+//		cfg := &MyServiceConfig{
+//			BaseConfig: config.DefaultBaseConfig(),
+//		}
+//
+//		// Load from environment, config files, etc.
+//		// Then validate
+//		if err := cfg.Validate(); err != nil {
+//			return nil, err
+//		}
+//
+//		return cfg, nil
+//	}
+//
+// # Environment Variables
+//
+// All configuration fields can be set via environment variables.
+// The package supports automatic environment variable binding with struct tags.
+//
+// # Validation
+//
+// The package provides comprehensive validation including:
+//   - Required field validation
+//   - URL format validation
+//   - Address format validation
+//   - Timeout and duration validation
+//   - Environment-specific validation
 package config
 
 import (
@@ -8,7 +52,26 @@ import (
 )
 
 // BaseConfig contains configuration common to all services using the Forge framework.
-// This should be embedded in service-specific configuration structs.
+// This should be embedded in service-specific configuration structs to inherit
+// standard microservice configuration fields.
+//
+// BaseConfig provides:
+//   - Service identification (name, environment, version)
+//   - Server configuration (gRPC and HTTP addresses, timeouts)
+//   - Logging configuration (level, format)
+//   - Observability configuration (OpenTelemetry endpoints, sampling)
+//   - Infrastructure URLs (database, Redis, etc.)
+//   - Lifecycle configuration (shutdown timeouts, readiness delays)
+//
+// All fields support environment variable override using the env struct tag.
+//
+// Example environment variables:
+//   SERVICE_NAME=user-service
+//   APP_ENV=production
+//   GRPC_ADDR=:8080
+//   HTTP_ADDR=:8081
+//   LOG_LEVEL=info
+//   DATABASE_URL=postgres://localhost:5432/mydb
 type BaseConfig struct {
 	// ServiceName is the name of the service (e.g., "user-service", "auth-service")
 	ServiceName string `yaml:"service_name" env:"SERVICE_NAME"`
@@ -55,6 +118,23 @@ type BaseConfig struct {
 }
 
 // DefaultBaseConfig returns a BaseConfig with sensible defaults.
+// Use this as a starting point for your service configuration, then override
+// specific fields as needed.
+//
+// Default values include:
+//   - ServiceName: "forge-service"
+//   - AppEnv: "development"
+//   - GRPCAddr: ":8080"
+//   - HTTPAddr: ":8081"
+//   - LogLevel: "info"
+//   - ShutdownTimeout: 30 seconds
+//   - OpenTelemetry sample rate: 1.0 (100%)
+//
+// Example usage:
+//
+//	cfg := config.DefaultBaseConfig()
+//	cfg.ServiceName = "my-service"
+//	cfg.AppEnv = "production"
 func DefaultBaseConfig() BaseConfig {
 	return BaseConfig{
 		ServiceName:           "forge-service",
@@ -77,7 +157,21 @@ func DefaultBaseConfig() BaseConfig {
 	}
 }
 
-// Validate performs validation on the BaseConfig fields.
+// Validate performs comprehensive validation on all BaseConfig fields.
+// Returns an error if any validation fails, with a descriptive message
+// indicating what needs to be corrected.
+//
+// Validation includes:
+//   - Required fields (service name, environment, addresses)
+//   - Valid log levels (debug, info, warn, error)
+//   - Valid environments (development, staging, production)
+//   - Positive timeouts and durations
+//   - Valid URL formats for endpoints and infrastructure URLs
+//   - Proper address formats (must contain port)
+//   - OpenTelemetry sample rate between 0 and 1
+//
+// Call this method after loading configuration from environment or files
+// to ensure all values are valid before starting the application.
 func (c *BaseConfig) Validate() error {
 	if c.ServiceName == "" {
 		return fmt.Errorf("service_name is required")

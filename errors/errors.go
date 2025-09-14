@@ -1,3 +1,48 @@
+// Package errors provides domain-specific error handling patterns for Forge microservices.
+//
+// The errors package implements structured error handling with error codes, context,
+// and error classification. It provides common error patterns that can be shared
+// across microservices and enables consistent error handling and reporting.
+//
+// # Basic Usage
+//
+// Use the predefined domain errors and customize with context:
+//
+//	if db.Ping() != nil {
+//		return errors.ErrRepositoryUnavailable.WithMessage("database connection failed")
+//	}
+//
+//	// With cause
+//	if err := validateUser(user); err != nil {
+//		return errors.ErrInvalidConfiguration.WithCause(err)
+//	}
+//
+// # Error Classification
+//
+// The package provides classification functions for error handling:
+//
+//	if errors.IsTransientError(err) {
+//		// Retry the operation
+//		time.Sleep(backoff)
+//		return retryOperation()
+//	}
+//
+//	if errors.IsAuthenticationError(err) {
+//		// Return 401 Unauthorized
+//		return handleAuthError(err)
+//	}
+//
+// # Custom Domain Errors
+//
+// Create service-specific errors using the DomainError pattern:
+//
+//	var ErrUserNotFound = errors.DomainError{
+//		Code:    "USER_NOT_FOUND",
+//		Message: "user not found",
+//	}
+//
+//	// Usage
+//	return ErrUserNotFound.WithMessage("user %s not found", userID)
 package errors
 
 import (
@@ -5,7 +50,27 @@ import (
 	"fmt"
 )
 
-// DomainError represents a domain-specific error with additional context
+// DomainError represents a domain-specific error with additional context.
+// DomainError implements the error interface and provides structured error
+// information including error codes, human-readable messages, and optional
+// underlying causes.
+//
+// DomainErrors are designed to be:
+//   - Serializable to JSON for API responses
+//   - Wrappable using Go's error wrapping patterns
+//   - Classifiable using the provided classification functions
+//   - Contextual with additional information via WithMessage and WithCause
+//
+// Example:
+//
+//	err := ErrRepositoryUnavailable.
+//		WithMessage("failed to connect to user database").
+//		WithCause(sqlErr)
+//
+//	// Can be unwrapped
+//	if errors.Is(err, sqlErr) {
+//		// Handle specific SQL error
+//	}
 type DomainError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -120,7 +185,15 @@ var (
 
 // Error classification functions - shared across services
 
-// IsTransientError returns true if the error is likely transient and can be retried
+// IsTransientError returns true if the error is likely transient and can be retried.
+// Transient errors include network timeouts, service unavailability, rate limiting,
+// and other temporary conditions that might resolve on retry.
+//
+// Use this for implementing retry logic:
+//
+//	if errors.IsTransientError(err) {
+//		return backoff.Retry(operation, backoff.NewExponentialBackOff())
+//	}
 func IsTransientError(err error) bool {
 	if err == nil {
 		return false
