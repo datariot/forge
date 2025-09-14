@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
@@ -269,8 +271,8 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to start application: %w", err)
 	}
 
-	// Wait for shutdown signal using signal context
-	signalCtx, signalCancel := SignalContext(ctx)
+	// Wait for shutdown signal using standard library
+	signalCtx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
 	select {

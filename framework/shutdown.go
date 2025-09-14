@@ -3,10 +3,7 @@ package framework
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -117,31 +114,6 @@ func (so *ShutdownOrchestrator) executeHook(ctx context.Context, hook Orchestrat
 	}
 }
 
-// SignalContext creates a context that will be cancelled when the specified OS signals are received.
-// This is a convenience function for creating contexts that respond to shutdown signals.
-func SignalContext(parent context.Context, signals ...os.Signal) (context.Context, context.CancelFunc) {
-	if len(signals) == 0 {
-		signals = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
-	}
-
-	ctx, cancel := context.WithCancel(parent)
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, signals...)
-
-	go func() {
-		defer signal.Stop(sigChan)
-		defer close(sigChan)
-		select {
-		case <-sigChan:
-			cancel()
-		case <-ctx.Done():
-			// Context cancelled, cleanup and exit
-		}
-	}()
-
-	return ctx, cancel
-}
 
 // ComponentShutdownHook creates a shutdown hook for a Component.
 func ComponentShutdownHook(name string, component Component) OrchestrationHook {
