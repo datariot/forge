@@ -221,6 +221,10 @@ type App struct {
 	registrars []Registrar
 	bundles    []Bundle
 
+	// gRPC interceptors
+	unaryInterceptors  []grpc.UnaryServerInterceptor
+	streamInterceptors []grpc.StreamServerInterceptor
+
 	// Hooks
 	startupHooks  []StartupHook
 	shutdownHooks []ShutdownHook
@@ -239,11 +243,13 @@ func New(options ...AppOption) (*App, error) {
 	app := &App{
 		version:       "development",
 		startAt:       time.Now(),
-		components:    make([]Component, 0),
-		registrars:    make([]Registrar, 0),
-		bundles:       make([]Bundle, 0),
-		startupHooks:  make([]StartupHook, 0),
-		shutdownHooks: make([]ShutdownHook, 0),
+		components:         make([]Component, 0),
+		registrars:         make([]Registrar, 0),
+		bundles:            make([]Bundle, 0),
+		unaryInterceptors:  make([]grpc.UnaryServerInterceptor, 0),
+		streamInterceptors: make([]grpc.StreamServerInterceptor, 0),
+		startupHooks:       make([]StartupHook, 0),
+		shutdownHooks:      make([]ShutdownHook, 0),
 	}
 
 	// Apply options
@@ -377,6 +383,28 @@ func WithShutdownHook(hook ShutdownHook) AppOption {
 			return fmt.Errorf("shutdown hook cannot be nil")
 		}
 		app.shutdownHooks = append(app.shutdownHooks, hook)
+		return nil
+	}
+}
+
+// WithUnaryInterceptor adds a gRPC unary server interceptor.
+func WithUnaryInterceptor(interceptor grpc.UnaryServerInterceptor) AppOption {
+	return func(app *App) error {
+		if interceptor == nil {
+			return fmt.Errorf("unary interceptor cannot be nil")
+		}
+		app.unaryInterceptors = append(app.unaryInterceptors, interceptor)
+		return nil
+	}
+}
+
+// WithStreamInterceptor adds a gRPC stream server interceptor.
+func WithStreamInterceptor(interceptor grpc.StreamServerInterceptor) AppOption {
+	return func(app *App) error {
+		if interceptor == nil {
+			return fmt.Errorf("stream interceptor cannot be nil")
+		}
+		app.streamInterceptors = append(app.streamInterceptors, interceptor)
 		return nil
 	}
 }
@@ -630,8 +658,21 @@ func (a *App) Stop(ctx context.Context) error {
 
 // startGRPCServer creates and starts the gRPC server.
 func (a *App) startGRPCServer(ctx context.Context) error {
-	// Create gRPC server
-	a.grpcServer = grpc.NewServer()
+	// Create gRPC server options
+	var opts []grpc.ServerOption
+
+	// Add unary interceptors if any
+	if len(a.unaryInterceptors) > 0 {
+		opts = append(opts, grpc.ChainUnaryInterceptor(a.unaryInterceptors...))
+	}
+
+	// Add stream interceptors if any
+	if len(a.streamInterceptors) > 0 {
+		opts = append(opts, grpc.ChainStreamInterceptor(a.streamInterceptors...))
+	}
+
+	// Create gRPC server with interceptors
+	a.grpcServer = grpc.NewServer(opts...)
 
 	// Register standard gRPC health service
 	grpc_health_v1.RegisterHealthServer(a.grpcServer, a.grpcHealthServer)
