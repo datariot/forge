@@ -2,17 +2,17 @@
 //
 // The PostgreSQL bundle provides:
 //   - Database connection management with connection pooling
-//   - Health checks for database connectivity
-//   - Migration support with golang-migrate/migrate
+//   - Health checks for database connectivity and performance
 //   - Transaction utilities and patterns
 //   - Graceful connection lifecycle management
+//   - Production-ready connection pool configuration
 //
 // # Basic Usage
 //
 // Add the PostgreSQL bundle to your application:
 //
 //	config := postgresql.Config{
-//		DatabaseURL: "postgres://user:pass@localhost/dbname?sslmode=disable",
+//		DatabaseURL: "postgres://user:pass@localhost/dbname?sslmode=require",
 //		MaxOpenConns: 25,
 //		MaxIdleConns: 10,
 //		ConnMaxLifetime: 30 * time.Minute,
@@ -44,27 +44,26 @@
 //   - Query execution capability
 //   - Connection pool health
 //
-// # Migrations
+// # Database Migrations
 //
-// The bundle supports automatic migrations on startup:
+// The bundle focuses on runtime database connectivity. For database migrations,
+// use dedicated tools during deployment:
 //
-//	config := postgresql.Config{
-//		DatabaseURL: "postgres://...",
-//		MigrationsPath: "file://./migrations",
-//		AutoMigrate: true,
-//	}
+//   - golang-migrate/migrate CLI tool
+//   - Flyway for enterprise deployments
+//   - Custom deployment scripts
+//   - Kubernetes init containers
+//
+// This separation keeps the runtime bundle lightweight and follows the principle
+// that migrations are a deployment concern, not a runtime concern.
 package postgresql
 
 import (
 	"context"
 	"database/sql"
-	"errors as stderrors"
 	"fmt"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/lib/pq"
 
 	"github.com/datariot/forge/errors"
@@ -84,10 +83,6 @@ type Config struct {
 	ConnMaxLifetime time.Duration // Maximum connection lifetime (default: 30 minutes)
 	ConnMaxIdleTime time.Duration // Maximum connection idle time (default: 15 minutes)
 
-	// Migration configuration
-	MigrationsPath string // Path to migration files (e.g., "file://./migrations")
-	AutoMigrate    bool   // Whether to run migrations automatically on startup
-
 	// Health check configuration
 	HealthCheckTimeout time.Duration // Timeout for health check queries (default: 5 seconds)
 }
@@ -100,7 +95,6 @@ func DefaultConfig() Config {
 		ConnMaxLifetime:    30 * time.Minute,
 		ConnMaxIdleTime:    15 * time.Minute,
 		HealthCheckTimeout: 5 * time.Second,
-		AutoMigrate:        false,
 	}
 }
 
@@ -171,14 +165,6 @@ func (b *Bundle) Initialize(app *framework.App) error {
 
 	b.db = db
 
-	// Run migrations if configured
-	if b.config.AutoMigrate && b.config.MigrationsPath != "" {
-		if err := b.runMigrations(); err != nil {
-			db.Close()
-			return fmt.Errorf("failed to run PostgreSQL migrations: %w", err)
-		}
-	}
-
 	return nil
 }
 
@@ -229,42 +215,6 @@ func (b *Bundle) HealthChecks() []forgeHealth.Check {
 	}
 }
 
-// runMigrations executes database migrations using golang-migrate.
-func (b *Bundle) runMigrations() error {
-	driver, err := postgres.WithInstance(b.db, &postgres.Config{})
-	if err != nil {
-		return errors.ErrRepositoryUnavailable.WithMessage("failed to create migration driver").WithCause(err)
-	}
-
-	m, err := migrate.NewWithDatabaseInstance(b.config.MigrationsPath, "postgres", driver)
-	if err != nil {
-		return errors.ErrInvalidConfiguration.WithMessage("failed to create migration instance from path %s", b.config.MigrationsPath).WithCause(err)
-	}
-	defer m.Close()
-
-	// Check current migration state
-	currentVersion, dirty, err := m.Version()
-	if err != nil && !stderrors.Is(err, migrate.ErrNilVersion) {
-		return errors.ErrRepositoryUnavailable.WithMessage("failed to get current migration version").WithCause(err)
-	}
-
-	// Check if database is in dirty state (previous migration failed)
-	if dirty {
-		return errors.ErrRepositoryUnavailable.WithMessage("database is in dirty state at version %d, manual intervention required", currentVersion)
-	}
-
-	// Run migrations
-	err = m.Up()
-	if err != nil {
-		if stderrors.Is(err, migrate.ErrNoChange) {
-			// No migrations to run - this is not an error
-			return nil
-		}
-		return errors.ErrTransactionFailed.WithMessage("failed to run migrations").WithCause(err)
-	}
-
-	return nil
-}
 
 // PostgreSQLHealthCheck implements health checking for PostgreSQL connections.
 type PostgreSQLHealthCheck struct {
