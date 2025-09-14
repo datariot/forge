@@ -1,0 +1,217 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Forge Microservice Dashboard",
+    "tags": ["forge", "microservice"],
+    "style": "dark",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "HTTP Request Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rate(${namespace}_http_requests_total[5m])) by (instance)",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 100},
+                {"color": "red", "value": 1000}
+              ]
+            },
+            "unit": "reqps"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "HTTP Error Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rate(${namespace}_http_requests_total{status_code=~\"4..|5..\"}[5m])) / sum(rate(${namespace}_http_requests_total[5m])) * 100",
+            "legendFormat": "Error Rate %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            },
+            "unit": "percent",
+            "max": 100
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "HTTP Request Duration",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(${namespace}_http_request_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(${namespace}_http_request_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "50th percentile"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Database Connections",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "${namespace}_database_connections_active",
+            "legendFormat": "Active Connections"
+          },
+          {
+            "expr": "${namespace}_database_connections_idle",
+            "legendFormat": "Idle Connections"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 5,
+        "title": "Redis Connections",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "${namespace}_redis_connections_active",
+            "legendFormat": "Active Connections"
+          },
+          {
+            "expr": "${namespace}_redis_connections_idle",
+            "legendFormat": "Idle Connections"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Health Check Status",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(${namespace}_health_checks_total{status=\"success\"}[5m])",
+            "legendFormat": "{{check_name}} - Success"
+          },
+          {
+            "expr": "rate(${namespace}_health_checks_total{status=\"failure\"}[5m])",
+            "legendFormat": "{{check_name}} - Failure"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops"
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24}
+      },
+      {
+        "id": 7,
+        "title": "JWT Authentication Rate",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(${namespace}_jwt_tokens_validated_total{status=\"success\"}[5m])",
+            "legendFormat": "{{service}} - Success"
+          },
+          {
+            "expr": "rate(${namespace}_jwt_tokens_validated_total{status=\"failure\"}[5m])",
+            "legendFormat": "{{service}} - Failure"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32}
+      },
+      {
+        "id": 8,
+        "title": "Circuit Breaker State",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "${namespace}_circuit_breaker_state",
+            "legendFormat": "{{name}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": 0},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 2}
+              ]
+            },
+            "mappings": [
+              {"options": {"0": {"text": "CLOSED"}}, "type": "value"},
+              {"options": {"1": {"text": "HALF-OPEN"}}, "type": "value"},
+              {"options": {"2": {"text": "OPEN"}}, "type": "value"}
+            ]
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32}
+      }
+    ],
+    "time": {"from": "now-1h", "to": "now"},
+    "refresh": "5s",
+    "schemaVersion": 16,
+    "version": 0,
+    "links": [],
+    "templating": {
+      "list": [
+        {
+          "name": "namespace",
+          "type": "constant",
+          "label": "Namespace",
+          "query": "myservice",
+          "description": "Prometheus metrics namespace (typically your service name)"
+        }
+      ]
+    }
+  }
+}
