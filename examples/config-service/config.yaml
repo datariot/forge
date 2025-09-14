@@ -1,0 +1,38 @@
+# Example Forge service configuration file
+# This file demonstrates configuration structure and options
+
+# Base service configuration
+service_name: "config-demo-service"
+app_env: "development"
+grpc_addr: ":8080"
+http_addr: ":8081"
+log_level: "info"
+
+# Database configuration
+database_url: "postgres://forge:password@localhost:5432/forge_demo?sslmode=disable"
+redis_url: "redis://localhost:6379/0"
+
+# Authentication configuration
+api_key: "development-api-key-12345678"
+jwt_secret: "development-jwt-secret-key-32-characters-minimum"
+
+# Application configuration
+debug: true
+max_connections: 25
+cache_timeout: "2h"
+features:
+  - "auth"
+  - "cache"
+  - "metrics"
+  - "debug"
+
+# External services
+external_services:
+  user_service_url: "http://localhost:9001"
+  email_service_url: "http://localhost:9002"
+  timeout: "45s"
+
+# Optional features
+enable_pprof: true
+enable_metrics: true
+enable_cors: false

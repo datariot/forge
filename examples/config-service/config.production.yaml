@@ -1,0 +1,37 @@
+# Production configuration example
+# Copy to config.yaml and update with production values
+
+service_name: "config-demo-service"
+app_env: "production"
+grpc_addr: ":8080"
+http_addr: ":8081"
+log_level: "warn"
+
+# Production database (use environment variables for secrets)
+# database_url: set via DATABASE_URL environment variable
+# redis_url: set via REDIS_URL environment variable
+
+# Security (use environment variables for secrets)
+# api_key: set via API_KEY environment variable
+# jwt_secret: set via JWT_SECRET environment variable
+
+# Production settings
+debug: false
+max_connections: 50
+cache_timeout: "24h"
+features:
+  - "auth"
+  - "cache"
+  - "metrics"
+
+# External services
+external_services:
+  user_service_url: "https://user-service.internal"
+  email_service_url: "https://email-service.internal"
+  timeout: "30s"
+
+# Production security
+enable_pprof: false
+enable_metrics: true
+enable_cors: false
+enable_reflection: false
