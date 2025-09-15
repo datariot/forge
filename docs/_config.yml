@@ -1,0 +1,70 @@
+# Forge Framework GitHub Pages Configuration
+
+title: "Forge"
+description: "A batteries-included Go framework for building production-ready microservices"
+url: "https://datariot.github.io"
+baseurl: "/forge"
+
+# Repository information
+repository: "datariot/forge"
+github_username: "datariot"
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+theme: minima
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+# Navigation
+header_pages:
+  - getting-started.md
+  - bundles.md
+  - examples.md
+  - api-reference.md
+
+# Social and contact
+github: [metadata]
+author: DataRiot
+twitter_username: datariot
+
+# Collections for documentation
+collections:
+  bundles:
+    output: true
+    permalink: /:collection/:name/
+  examples:
+    output: true
+    permalink: /:collection/:name/
+
+# Defaults for front matter
+defaults:
+  - scope:
+      path: ""
+      type: "pages"
+    values:
+      layout: "page"
+  - scope:
+      path: ""
+      type: "bundles"
+    values:
+      layout: "bundle"
+  - scope:
+      path: ""
+      type: "examples"
+    values:
+      layout: "example"
+
+# Syntax highlighting
+kramdown:
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    css_class: 'highlight'
+    span:
+      line_numbers: false
+    block:
+      line_numbers: true
