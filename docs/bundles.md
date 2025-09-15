@@ -10,7 +10,7 @@ Bundles are pre-built integrations that add functionality to your Forge applicat
 
 ## Available Bundles
 
-### 🗄️ [PostgreSQL Bundle](bundles/postgresql/)
+### 🗄️ PostgreSQL Bundle
 
 Production-ready PostgreSQL integration with connection pooling and health checks.
 
@@ -35,7 +35,7 @@ app, err := framework.New(
 - Graceful connection lifecycle management
 - Production-ready security validation
 
-### 🚀 [Redis Bundle](bundles/redis/)
+### 🚀 Redis Bundle
 
 Comprehensive Redis integration for caching, messaging, and distributed operations.
 
@@ -60,7 +60,7 @@ lock := redisBundle.NewDistributedLock("resource", 30*time.Second)
 - Rate limiting with sliding window algorithm
 - Connection pool monitoring and health checks
 
-### 🔐 [JWT Authentication Bundle](bundles/jwt/)
+### 🔐 JWT Authentication Bundle
 
 Secure service-to-service authentication with automatic token management.
 
@@ -86,7 +86,7 @@ app, err := framework.New(
 - Service identity and permissions model
 - Path-based authentication exemptions
 
-### 🌐 [HTTP Client Bundle](bundles/httpclient/)
+### 🌐 HTTP Client Bundle
 
 Resilient HTTP client with circuit breakers, retries, and authentication.
 
@@ -114,7 +114,7 @@ err := client.Get(ctx, "/users/123", &response)
 - Request/response logging with security filtering
 - Connection pool optimization
 
-### 📊 [Prometheus Bundle](bundles/prometheus/)
+### 📊 Prometheus Bundle
 
 Comprehensive metrics collection with pre-built Grafana dashboards.
 
@@ -143,7 +143,7 @@ counter, err := promBundle.CreateCustomCounter(
 - Custom metrics with consistent labeling
 - Pre-built Grafana dashboard templates
 
-### ⚙️ [Configuration Loading Bundle](bundles/configloader/)
+### ⚙️ Configuration Loading Bundle
 
 Automatic configuration loading from files and environment variables.
 

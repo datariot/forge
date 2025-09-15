@@ -384,5 +384,5 @@ dependencies:
 ## Next Steps
 
 - **[API Reference](api-reference.html)** - Detailed API documentation
-- **[Production Deployment](deployment.html)** - Production best practices
-- **[Contributing](https://github.com/datariot/forge/blob/main/CONTRIBUTING.md)** - How to contribute
+- **[GitHub Repository](https://github.com/datariot/forge)** - Source code and examples
+- **[Bundle Documentation](bundles.html)** - Detailed bundle reference

@@ -80,12 +80,14 @@ go get github.com/datariot/forge
 
 | Bundle | Purpose | Status |
 |--------|---------|---------|
-| [PostgreSQL](bundles/postgresql/) | Database connectivity with connection pooling | ✅ Production Ready |
-| [Redis](bundles/redis/) | Caching, messaging, and distributed locking | ✅ Production Ready |
-| [JWT Auth](bundles/jwt/) | Secure service-to-service authentication | ✅ Production Ready |
-| [HTTP Client](bundles/httpclient/) | Resilient HTTP communication with circuit breakers | ✅ Production Ready |
-| [Prometheus](bundles/prometheus/) | Comprehensive metrics and observability | ✅ Production Ready |
-| [Config Loader](bundles/configloader/) | Automatic configuration management | ✅ Production Ready |
+| **PostgreSQL** | Database connectivity with connection pooling | ✅ Production Ready |
+| **Redis** | Caching, messaging, and distributed locking | ✅ Production Ready |
+| **JWT Auth** | Secure service-to-service authentication | ✅ Production Ready |
+| **HTTP Client** | Resilient HTTP communication with circuit breakers | ✅ Production Ready |
+| **Prometheus** | Comprehensive metrics and observability | ✅ Production Ready |
+| **Config Loader** | Automatic configuration management | ✅ Production Ready |
+
+*All bundles include comprehensive security hardening, production-ready defaults, and extensive documentation.*
 
 ## Architecture
 

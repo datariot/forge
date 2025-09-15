@@ -216,7 +216,6 @@ go run main.go
 - **[Explore Bundles](bundles.html)** - Learn about available integrations
 - **[View Examples](examples.html)** - See complete working examples
 - **[API Reference](api-reference.html)** - Detailed API documentation
-- **[Production Deployment](deployment.html)** - Production deployment guide
 
 ## Key Concepts
 
