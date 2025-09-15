@@ -119,3 +119,4 @@ Built-in support for:
 - **Structured Logging**: JSON logging with zerolog
 - **Metrics**: Ready for Prometheus integration
 - **Health Checks**: Kubernetes-compatible health endpoints
+- We want to be "batteries included" but also lightweight, so we need to evaluate 3rd party modules before adding them to the project.
