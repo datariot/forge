@@ -36,3 +36,15 @@ Thumbs.db
 *.local
 .env
 .env.local
+# Test coverage files
+coverage.out
+coverage.html
+
+# Example service binaries
+examples/*/simple-service
+examples/*/redis-service
+examples/*/postgresql-service
+examples/*/jwt-service
+examples/*/httpclient-service
+examples/*/prometheus-service
+examples/*/config-service
