@@ -382,14 +382,24 @@ func (b *Bundle) Client() *Client {
 	return b.client
 }
 
-// Close closes the HTTP client connections.
-func (b *Bundle) Close() error {
+// Stop implements the Bundle interface for graceful shutdown.
+// Closes idle HTTP client connections respecting the context deadline.
+func (b *Bundle) Stop(ctx context.Context) error {
 	if b.client != nil && b.client.httpClient != nil && b.client.httpClient.Transport != nil {
 		if transport, ok := b.client.httpClient.Transport.(*http.Transport); ok {
+			// Close idle connections (this is a non-blocking operation)
 			transport.CloseIdleConnections()
 		}
 	}
 	return nil
+}
+
+// Close is deprecated. Use Stop() instead for proper lifecycle integration.
+// Maintained for backward compatibility.
+func (b *Bundle) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return b.Stop(ctx)
 }
 
 // createBackoffStrategy creates the configured backoff strategy.

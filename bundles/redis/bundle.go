@@ -318,12 +318,36 @@ func (b *Bundle) PubSub() *PubSubService {
 	return b.pubsub
 }
 
-// Close closes the Redis connection. Called during application shutdown.
-func (b *Bundle) Close() error {
-	if b.client != nil {
-		return b.client.Close()
+// Stop implements the Bundle interface for graceful shutdown.
+// Closes the Redis connection respecting the context deadline.
+func (b *Bundle) Stop(ctx context.Context) error {
+	if b.client == nil {
+		return nil
 	}
-	return nil
+
+	// Channel to signal when connection is closed
+	done := make(chan error, 1)
+	go func() {
+		done <- b.client.Close()
+	}()
+
+	// Wait for either successful closure or context timeout
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		// Force close after timeout
+		b.client.Close()
+		return fmt.Errorf("redis connection close timed out: %w", ctx.Err())
+	}
+}
+
+// Close is deprecated. Use Stop() instead for proper lifecycle integration.
+// Maintained for backward compatibility.
+func (b *Bundle) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return b.Stop(ctx)
 }
 
 // HealthChecks returns health checks for the Redis connection.

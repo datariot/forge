@@ -146,12 +146,14 @@ type HealthContributor interface {
 
 // Bundle represents a reusable collection of functionality that can be added to an app.
 // Bundles encapsulate common integrations like database connections, message queues,
-// monitoring, etc. They are initialized in registration order during startup.
+// monitoring, etc. They are initialized in registration order during startup and
+// stopped in reverse order during shutdown.
 //
 // Example bundle for PostgreSQL integration:
 //
 //	type PostgreSQLBundle struct {
 //		config *DatabaseConfig
+//		db     *sql.DB
 //	}
 //
 //	func (b *PostgreSQLBundle) Name() string {
@@ -163,7 +165,14 @@ type HealthContributor interface {
 //		if err != nil {
 //			return err
 //		}
-//		// Add database to app context or register as component
+//		b.db = db
+//		return nil
+//	}
+//
+//	func (b *PostgreSQLBundle) Stop(ctx context.Context) error {
+//		if b.db != nil {
+//			return b.db.Close()
+//		}
 //		return nil
 //	}
 type Bundle interface {
@@ -173,6 +182,11 @@ type Bundle interface {
 	// Initialize sets up the bundle's functionality within the application.
 	// This method is called during application startup before components are started.
 	Initialize(app *App) error
+
+	// Stop gracefully shuts down the bundle and cleans up resources.
+	// This method is called during application shutdown in reverse initialization order.
+	// Bundles should respect the context deadline for graceful termination.
+	Stop(ctx context.Context) error
 }
 
 // StartupHook is called during application startup.
@@ -601,7 +615,17 @@ func (a *App) Stop(ctx context.Context) error {
 		}(component))
 	}
 
-	// 3. gRPC server
+	// 3. Bundles (register in forward order, orchestrator executes in reverse)
+	for i := 0; i < len(a.bundles); i++ {
+		bundle := a.bundles[i] // Create local copy for closure
+		orchestrator.RegisterHook(fmt.Sprintf("bundle-%s", bundle.Name()), func(currentBundle Bundle) func(context.Context) error {
+			return func(ctx context.Context) error {
+				return currentBundle.Stop(ctx)
+			}
+		}(bundle))
+	}
+
+	// 4. gRPC server
 	if a.grpcServer != nil {
 		orchestrator.RegisterHook("grpc-server", func(ctx context.Context) error {
 			done := make(chan struct{})
@@ -622,7 +646,7 @@ func (a *App) Stop(ctx context.Context) error {
 		})
 	}
 
-	// 4. HTTP server
+	// 5. HTTP server
 	if a.httpServer != nil {
 		orchestrator.RegisterHook("http-server", func(ctx context.Context) error {
 			if err := a.httpServer.Shutdown(ctx); err != nil {
@@ -633,7 +657,7 @@ func (a *App) Stop(ctx context.Context) error {
 		})
 	}
 
-	// 5. Observability (last to maintain logging as long as possible)
+	// 6. Observability (last to maintain logging as long as possible)
 	if a.observability != nil {
 		orchestrator.RegisterHook("observability", func(ctx context.Context) error {
 			if err := a.observability.Shutdown(ctx); err != nil {

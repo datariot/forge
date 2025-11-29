@@ -649,3 +649,9 @@ func validateServiceIdentifier(identifier string) error {
 
 	return nil
 }
+// Stop implements the Bundle interface for graceful shutdown.
+// JWT bundle has no persistent resources requiring cleanup.
+func (b *Bundle) Stop(ctx context.Context) error {
+	// No resources to clean up (token cache is in-memory only)
+	return nil
+}

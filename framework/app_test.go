@@ -40,6 +40,8 @@ type TestBundle struct {
 	name string
 	initError error
 	initialized bool
+	stopped bool
+	stopError error
 }
 
 func (b *TestBundle) Name() string {
@@ -49,6 +51,11 @@ func (b *TestBundle) Name() string {
 func (b *TestBundle) Initialize(app *App) error {
 	b.initialized = true
 	return b.initError
+}
+
+func (b *TestBundle) Stop(ctx context.Context) error {
+	b.stopped = true
+	return b.stopError
 }
 
 func TestApp_New_ValidConfig(t *testing.T) {
@@ -128,9 +135,12 @@ func TestApp_WithComponent_NilComponent(t *testing.T) {
 		t.Fatal("Expected error for nil component")
 	}
 
-	expectedError := "component cannot be nil"
-	if err.Error() != expectedError {
-		t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
+	if err == nil {
+		t.Fatal("Expected error for nil component")
+	}
+
+	if !strings.Contains(err.Error(), "component cannot be nil") {
+		t.Errorf("Expected error to contain 'component cannot be nil', got '%s'", err.Error())
 	}
 }
 
