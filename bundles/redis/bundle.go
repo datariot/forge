@@ -292,7 +292,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.client.Ping(ctx).Err(); err != nil {
 		b.client.Close()
 		return errors.ErrRepositoryUnavailable.WithMessage(
-			fmt.Sprintf("failed to connect to Redis at %s", b.config.SanitizedRedisURL()),
+			"failed to connect to Redis at %s", b.config.SanitizedRedisURL(),
 		).WithCause(err)
 	}
 

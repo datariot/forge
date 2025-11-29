@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -110,14 +111,14 @@ type TestComponent struct {
 	StopCalled  bool
 	StartError  error
 	StopError   error
-	HealthChecks []forgeHealth.Check
+	checks      []forgeHealth.Check
 }
 
 // NewTestComponent creates a new test component.
 func NewTestComponent(name string) *TestComponent {
 	return &TestComponent{
 		Name: name,
-		HealthChecks: []forgeHealth.Check{
+		checks: []forgeHealth.Check{
 			forgeHealth.NewAlwaysHealthyCheck(name),
 		},
 	}
@@ -137,7 +138,7 @@ func (c *TestComponent) Stop(ctx context.Context) error {
 
 // HealthChecks implements the HealthContributor interface.
 func (c *TestComponent) HealthChecks() []forgeHealth.Check {
-	return c.HealthChecks
+	return c.checks
 }
 
 // TestBundle provides a mock Bundle implementation for testing.
