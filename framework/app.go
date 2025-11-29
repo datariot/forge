@@ -581,8 +581,8 @@ func (a *App) Stop(ctx context.Context) error {
 
 	// Register shutdown hooks in proper order (reverse of startup)
 
-	// 1. User-defined shutdown hooks (executed first, in reverse order)
-	for i := len(a.shutdownHooks) - 1; i >= 0; i-- {
+	// 1. User-defined shutdown hooks (register in forward order, orchestrator executes in reverse)
+	for i := 0; i < len(a.shutdownHooks); i++ {
 		hook := a.shutdownHooks[i] // Create local copy for closure
 		orchestrator.RegisterHook(fmt.Sprintf("user-hook-%d", i), func(currentHook ShutdownHook) func(context.Context) error {
 			return func(ctx context.Context) error {
@@ -591,8 +591,8 @@ func (a *App) Stop(ctx context.Context) error {
 		}(hook))
 	}
 
-	// 2. Components (in reverse order of startup)
-	for i := len(a.components) - 1; i >= 0; i-- {
+	// 2. Components (register in forward order, orchestrator will execute in reverse)
+	for i := 0; i < len(a.components); i++ {
 		component := a.components[i] // Create local copy for closure
 		orchestrator.RegisterHook(fmt.Sprintf("component-%d", i), func(currentComponent Component) func(context.Context) error {
 			return func(ctx context.Context) error {
