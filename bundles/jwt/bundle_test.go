@@ -12,20 +12,23 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Issuer != "forge-service" {
-		t.Errorf("Expected Issuer 'forge-service', got %s", cfg.Issuer)
-	}
-
-	if cfg.Audience != "forge-services" {
-		t.Errorf("Expected Audience 'forge-services', got %s", cfg.Audience)
-	}
+	// Note: Issuer, Audience, ServiceName, SecretKey are required to be set by user
+	// DefaultConfig only sets the timing and security defaults
 
 	if cfg.TokenDuration != 1*time.Hour {
 		t.Errorf("Expected TokenDuration 1h, got %v", cfg.TokenDuration)
 	}
 
-	if cfg.ClockSkew != 30*time.Second {
-		t.Errorf("Expected ClockSkew 30s, got %v", cfg.ClockSkew)
+	if cfg.ClockSkew != 1*time.Minute {
+		t.Errorf("Expected ClockSkew 1m, got %v", cfg.ClockSkew)
+	}
+
+	if !cfg.RequireHTTPS {
+		t.Error("Expected RequireHTTPS to be true by default (secure by default)")
+	}
+
+	if len(cfg.SkipPaths) != 1 || cfg.SkipPaths[0] != "/health" {
+		t.Error("Expected SkipPaths to contain only /health by default")
 	}
 }
 
