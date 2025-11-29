@@ -211,12 +211,36 @@ func (b *Bundle) Loader() *Loader {
 	return b.loader
 }
 
-// Close stops file watching and cleans up resources.
-func (b *Bundle) Close() error {
-	if b.watcher != nil {
-		return b.watcher.Close()
+// Stop implements the Bundle interface for graceful shutdown.
+// Stops file watching and cleans up resources respecting the context deadline.
+func (b *Bundle) Stop(ctx context.Context) error {
+	if b.watcher == nil {
+		return nil
 	}
-	return nil
+
+	// Channel to signal when watcher is closed
+	done := make(chan error, 1)
+	go func() {
+		done <- b.watcher.Close()
+	}()
+
+	// Wait for either successful closure or context timeout
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		// Force close after timeout
+		b.watcher.Close()
+		return fmt.Errorf("config watcher close timed out: %w", ctx.Err())
+	}
+}
+
+// Close is deprecated. Use Stop() instead for proper lifecycle integration.
+// Maintained for backward compatibility.
+func (b *Bundle) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return b.Stop(ctx)
 }
 
 // initializeWatcher sets up file system watching for hot reload.

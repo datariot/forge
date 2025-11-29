@@ -230,10 +230,18 @@ func TestApp_Lifecycle_BundleInitialization(t *testing.T) {
 		t.Error("Bundle should be initialized after Start()")
 	}
 
+	if bundle.stopped {
+		t.Error("Bundle should not be stopped before Stop()")
+	}
+
 	// Cleanup
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopCancel()
 	app.Stop(stopCtx)
+
+	if !bundle.stopped {
+		t.Error("Bundle should be stopped after Stop()")
+	}
 }
 
 // TestApp_Lifecycle_StartupHooks tests startup hook execution

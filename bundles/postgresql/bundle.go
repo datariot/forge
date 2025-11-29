@@ -173,16 +173,12 @@ func (b *Bundle) DB() *sql.DB {
 	return b.db
 }
 
-// Close closes the database connection gracefully with timeout.
-// This should be called during application shutdown to ensure proper cleanup.
-func (b *Bundle) Close() error {
+// Stop implements the Bundle interface for graceful shutdown.
+// Closes the database connection respecting the context deadline.
+func (b *Bundle) Stop(ctx context.Context) error {
 	if b.db == nil {
 		return nil
 	}
-
-	// Create a context with timeout for graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	// Channel to signal when connection is closed
 	done := make(chan error, 1)
@@ -190,15 +186,23 @@ func (b *Bundle) Close() error {
 		done <- b.db.Close()
 	}()
 
-	// Wait for either successful closure or timeout
+	// Wait for either successful closure or context timeout
 	select {
 	case err := <-done:
 		return err
 	case <-ctx.Done():
 		// Force close after timeout
 		b.db.Close()
-		return fmt.Errorf("database connection close timed out after 30 seconds")
+		return fmt.Errorf("database connection close timed out: %w", ctx.Err())
 	}
+}
+
+// Close is deprecated. Use Stop() instead for proper lifecycle integration.
+// Maintained for backward compatibility.
+func (b *Bundle) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return b.Stop(ctx)
 }
 
 // HealthChecks returns health checks for the PostgreSQL connection.

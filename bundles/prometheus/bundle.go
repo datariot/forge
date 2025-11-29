@@ -867,3 +867,11 @@ func (b *Bundle) StartMetricsCollection(ctx context.Context, collectors []Metric
 		}
 	}()
 }
+
+// Stop implements the Bundle interface for graceful shutdown.
+// Prometheus bundle has no persistent resources requiring cleanup.
+func (b *Bundle) Stop(ctx context.Context) error {
+	// Metrics remain in Prometheus registry until process exit
+	// No cleanup needed
+	return nil
+}

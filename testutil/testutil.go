@@ -146,6 +146,8 @@ type TestBundle struct {
 	BundleName   string
 	InitCalled   bool
 	InitError    error
+	StopCalled   bool
+	StopError    error
 }
 
 // NewTestBundle creates a new test bundle.
@@ -164,6 +166,12 @@ func (b *TestBundle) Name() string {
 func (b *TestBundle) Initialize(app *framework.App) error {
 	b.InitCalled = true
 	return b.InitError
+}
+
+// Stop implements the Bundle interface.
+func (b *TestBundle) Stop(ctx context.Context) error {
+	b.StopCalled = true
+	return b.StopError
 }
 
 // getRandomPort returns a random available port for testing.
