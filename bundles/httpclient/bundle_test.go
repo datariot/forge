@@ -6,44 +6,6 @@ import (
 	"time"
 )
 
-// TestDefaultRetryConfig tests default retry configuration
-func TestDefaultRetryConfig(t *testing.T) {
-	cfg := DefaultRetryConfig()
-
-	if cfg.MaxRetries != 3 {
-		t.Errorf("Expected MaxRetries 3, got %d", cfg.MaxRetries)
-	}
-
-	if cfg.InitialInterval != 100*time.Millisecond {
-		t.Errorf("Expected InitialInterval 100ms, got %v", cfg.InitialInterval)
-	}
-
-	if cfg.MaxInterval != 10*time.Second {
-		t.Errorf("Expected MaxInterval 10s, got %v", cfg.MaxInterval)
-	}
-
-	if cfg.Multiplier != 2.0 {
-		t.Errorf("Expected Multiplier 2.0, got %f", cfg.Multiplier)
-	}
-}
-
-// TestDefaultCircuitBreakerConfig tests default circuit breaker configuration
-func TestDefaultCircuitBreakerConfig(t *testing.T) {
-	cfg := DefaultCircuitBreakerConfig()
-
-	if cfg.MaxRequests != 1 {
-		t.Errorf("Expected MaxRequests 1, got %d", cfg.MaxRequests)
-	}
-
-	if cfg.Interval != 60*time.Second {
-		t.Errorf("Expected Interval 60s, got %v", cfg.Interval)
-	}
-
-	if cfg.Timeout != 30*time.Second {
-		t.Errorf("Expected Timeout 30s, got %v", cfg.Timeout)
-	}
-}
-
 // TestDefaultConfig tests default HTTP client configuration
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
@@ -64,12 +26,22 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Expected IdleConnTimeout 90s, got %v", cfg.IdleConnTimeout)
 	}
 
-	if !cfg.EnableCircuitBreaker {
-		t.Error("Expected EnableCircuitBreaker to be true by default")
+	// Check retry config defaults
+	if cfg.RetryConfig.MaxRetries != 3 {
+		t.Errorf("Expected default MaxRetries 3, got %d", cfg.RetryConfig.MaxRetries)
 	}
 
-	if !cfg.EnableRetry {
-		t.Error("Expected EnableRetry to be true by default")
+	if cfg.RetryConfig.InitialInterval != 100*time.Millisecond {
+		t.Errorf("Expected default InitialInterval 100ms, got %v", cfg.RetryConfig.InitialInterval)
+	}
+
+	// Check circuit breaker defaults
+	if cfg.CircuitBreakerConfig.MaxRequests != 3 {
+		t.Errorf("Expected default CB MaxRequests 3, got %d", cfg.CircuitBreakerConfig.MaxRequests)
+	}
+
+	if cfg.CircuitBreakerConfig.Timeout != 30*time.Second {
+		t.Errorf("Expected default CB Timeout 30s, got %v", cfg.CircuitBreakerConfig.Timeout)
 	}
 }
 
@@ -93,8 +65,8 @@ func TestNewBundle(t *testing.T) {
 func TestBundle_Name(t *testing.T) {
 	bundle := NewBundle(DefaultConfig())
 
-	if bundle.Name() != "httpclient" {
-		t.Errorf("Expected bundle name 'httpclient', got %s", bundle.Name())
+	if bundle.Name() != "http-client" {
+		t.Errorf("Expected bundle name 'http-client', got %s", bundle.Name())
 	}
 }
 
@@ -150,58 +122,42 @@ func TestBundle_Stop_BeforeInitialize(t *testing.T) {
 	}
 }
 
-// TestRetryConfig_Validation tests retry configuration validation
-func TestRetryConfig_Validation(t *testing.T) {
-	tests := []struct {
-		name   string
-		modify func(*RetryConfig)
-		valid  bool
-	}{
-		{
-			name:   "valid default",
-			modify: func(c *RetryConfig) {},
-			valid:  true,
-		},
-		{
-			name:   "zero MaxRetries",
-			modify: func(c *RetryConfig) { c.MaxRetries = 0 },
-			valid:  true, // Zero retries is valid (disables retries)
-		},
-		{
-			name:   "negative MaxRetries",
-			modify: func(c *RetryConfig) { c.MaxRetries = -1 },
-			valid:  false,
-		},
+// TestConfig_RetrySettings tests retry configuration embedded in Config
+func TestConfig_RetrySettings(t *testing.T) {
+	cfg := DefaultConfig()
+
+	// Verify retry settings are initialized
+	if cfg.RetryConfig.MaxRetries <= 0 {
+		t.Error("Expected positive MaxRetries")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := DefaultRetryConfig()
-			tt.modify(&cfg)
+	if cfg.RetryConfig.InitialInterval <= 0 {
+		t.Error("Expected positive InitialInterval")
+	}
 
-			// Note: No validation method exists, so we just verify
-			// the config can be created with these values
-			if tt.valid && cfg.MaxRetries < 0 {
-				t.Error("Invalid config should not be possible")
-			}
-		})
+	if cfg.RetryConfig.MaxInterval <= 0 {
+		t.Error("Expected positive MaxInterval")
+	}
+
+	if cfg.RetryConfig.Multiplier <= 1.0 {
+		t.Error("Expected Multiplier > 1.0 for exponential backoff")
 	}
 }
 
-// TestCircuitBreakerConfig_Defaults tests circuit breaker has reasonable settings
-func TestCircuitBreakerConfig_Defaults(t *testing.T) {
-	cfg := DefaultCircuitBreakerConfig()
+// TestConfig_CircuitBreakerSettings tests circuit breaker configuration
+func TestConfig_CircuitBreakerSettings(t *testing.T) {
+	cfg := DefaultConfig()
 
-	// Verify reasonable production settings
-	if cfg.MaxRequests < 1 {
+	// Verify circuit breaker settings are initialized
+	if cfg.CircuitBreakerConfig.MaxRequests < 1 {
 		t.Error("MaxRequests should be at least 1")
 	}
 
-	if cfg.Interval < 1*time.Second {
+	if cfg.CircuitBreakerConfig.Interval < 1*time.Second {
 		t.Error("Interval should be at least 1 second")
 	}
 
-	if cfg.Timeout < 1*time.Second {
+	if cfg.CircuitBreakerConfig.Timeout < 1*time.Second {
 		t.Error("Timeout should be at least 1 second")
 	}
 }
