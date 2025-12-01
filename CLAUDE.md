@@ -10,45 +10,73 @@ Forge is a batteries-included Go framework for building production-ready microse
 
 ### Building and Testing
 ```bash
-# Build the project
+# Build the framework
+task build
+# OR
 go build ./...
 
-# Run tests
+# Run all unit tests
+task test
+# OR
 go test ./...
 
 # Run tests with verbose output
-go test -v ./...
+task test:verbose
 
-# Run tests for a specific package
-go test ./framework
-go test ./config
+# Run tests for specific package
+task test:package PKG=./framework
+task test:package PKG=./bundles/postgresql
 
 # Check for race conditions
-go test -race ./...
+task test:race
+
+# Run with coverage report
+task test:coverage
+# Opens coverage.html in browser
+
+# Run integration tests (requires Docker)
+task test:integration
+# Starts PostgreSQL + Redis, runs tests, cleans up
+
+# Watch mode (requires 'entr')
+task test:watch
+
+# See all available tasks
+task --list
 ```
 
 ### Code Quality
 ```bash
 # Format code
+task fmt
+# OR
 go fmt ./...
 
 # Vet code for issues
-go vet ./...
+task vet
 
-# Run static analysis (if golangci-lint is available)
-golangci-lint run
+# Run all linters
+task lint
+
+# Auto-fix lint issues
+task lint:fix
 ```
 
 ### Module Management
 ```bash
 # Tidy dependencies
+task deps:tidy
+# OR
 go mod tidy
 
 # Download dependencies
-go mod download
+task deps
 
 # Verify dependencies
-go mod verify
+task deps:verify
+
+# Update all dependencies
+task deps:update
 ```
 
 ## Architecture Overview
