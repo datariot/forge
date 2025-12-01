@@ -1,0 +1,290 @@
+version: '3'
+
+vars:
+  COVERAGE_FILE: coverage.out
+  COVERAGE_HTML: coverage.html
+  POSTGRES_URL: postgres://forge:forge-test-password@localhost:5432/forge_test?sslmode=disable
+  REDIS_URL: redis://localhost:6379/0
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # Testing tasks
+
+  test:
+    desc: Run all unit tests (no external dependencies)
+    aliases: [test-unit]
+    cmds:
+      - echo "Running unit tests..."
+      - go test -v -race ./...
+
+  test:integration:
+    desc: Run integration tests (requires Docker)
+    deps: [docker:up]
+    cmds:
+      - echo "Waiting for services to be healthy..."
+      - sleep 5
+      - echo "Running integration tests..."
+      - cmd: DATABASE_URL={{.POSTGRES_URL}} REDIS_URL={{.REDIS_URL}} go test -v -tags=integration ./bundles/...
+      - task: docker:down
+
+  test:coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - echo "Running tests with coverage..."
+      - go test -race -coverprofile={{.COVERAGE_FILE}} ./...
+      - go tool cover -html={{.COVERAGE_FILE}} -o {{.COVERAGE_HTML}}
+      - echo "Coverage report generated{{.COVERAGE_HTML}}"
+      - go tool cover -func={{.COVERAGE_FILE}} | grep total
+
+  test:watch:
+    desc: Run tests on file changes (requires entr)
+    cmds:
+      - echo "Watching for changes..."
+      - find . -name '*.go' | entr -c task test
+
+  test:verbose:
+    desc: Run tests with verbose output
+    cmds:
+      - go test -v ./...
+
+  test:race:
+    desc: Run tests with race detection
+    cmds:
+      - go test -race ./...
+
+  test:package:
+    desc: Run tests for specific package (usage - task test:package PKG=./framework)
+    cmds:
+      - go test -v {{.PKG}}
+
+  # Docker tasks
+
+  docker:up:
+    desc: Start Docker services for testing
+    cmds:
+      - echo "Starting test infrastructure..."
+      - docker-compose -f docker-compose.test.yml up -d
+      - echo "Waiting for services to be ready..."
+      - sleep 3
+
+  docker:down:
+    desc: Stop Docker services
+    cmds:
+      - echo "Stopping test infrastructure..."
+      - docker-compose -f docker-compose.test.yml down
+
+  docker:clean:
+    desc: Stop and remove Docker volumes
+    cmds:
+      - echo "Cleaning test infrastructure..."
+      - docker-compose -f docker-compose.test.yml down -v
+
+  docker:logs:
+    desc: Show Docker service logs
+    cmds:
+      - docker-compose -f docker-compose.test.yml logs -f
+
+  docker:ps:
+    desc: Show running Docker services
+    cmds:
+      - docker-compose -f docker-compose.test.yml ps
+
+  # Build tasks
+
+  build:
+    desc: Build the framework
+    cmds:
+      - echo "Building framework..."
+      - go build ./...
+
+  build:examples:
+    desc: Build all example services
+    cmds:
+      - echo "Building examples..."
+      - |
+        for dir in examples/*/; do
+          echo "Building $dir..."
+          (cd "$dir" && go build .) || exit 1
+        done
+      - echo "✅ All examples built successfully"
+
+  build:all:
+    desc: Build framework and all examples
+    deps: [build, build:examples]
+
+  # Code quality tasks
+
+  fmt:
+    desc: Format code
+    cmds:
+      - echo "Formatting code..."
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - echo "Running go vet..."
+      - go vet ./...
+
+  lint:
+    desc: Run all linters
+    deps: [fmt, vet]
+    cmds:
+      - echo "Running golangci-lint..."
+      - golangci-lint run --timeout=5m || echo "⚠️  golangci-lint not installed"
+
+  lint:fix:
+    desc: Run linters and auto-fix issues
+    cmds:
+      - go fmt ./...
+      - golangci-lint run --fix --timeout=5m || echo "⚠️  golangci-lint not installed"
+
+  # Cleanup tasks
+
+  clean:
+    desc: Clean build artifacts and coverage files
+    cmds:
+      - echo "Cleaning build artifacts..."
+      - rm -f {{.COVERAGE_FILE}} {{.COVERAGE_HTML}}
+      - find examples -type f -executable -delete
+      - find . -name "*.test" -delete
+      - echo "✅ Cleaned"
+
+  clean:all:
+    desc: Clean everything including Docker volumes
+    deps: [clean, docker:clean]
+    cmds:
+      - echo "✅ Cleaned all artifacts and Docker volumes"
+
+  # Dependency tasks
+
+  deps:
+    desc: Download dependencies
+    cmds:
+      - echo "Downloading dependencies..."
+      - go mod download
+
+  deps:tidy:
+    desc: Tidy dependencies
+    cmds:
+      - echo "Tidying dependencies..."
+      - go mod tidy
+
+  deps:verify:
+    desc: Verify dependencies
+    cmds:
+      - echo "Verifying dependencies..."
+      - go mod verify
+
+  deps:update:
+    desc: Update all dependencies
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+
+  # CI tasks
+
+  ci:
+    desc: Run all CI checks (no Docker required)
+    deps: [fmt, vet, test, build, build:examples]
+    cmds:
+      - echo "✅ All CI checks passed"
+
+  ci:full:
+    desc: Run full CI including integration tests
+    deps: [ci, test:integration]
+    cmds:
+      - echo "✅ Full CI passed"
+
+  # Development tasks
+
+  dev:setup:
+    desc: Set up development environment
+    cmds:
+      - echo "Setting up development environment..."
+      - task: deps
+      - task: docker:up
+      - echo "✅ Development environment ready"
+      - echo "Run 'task test:integration' to verify setup"
+
+  dev:teardown:
+    desc: Tear down development environment
+    cmds:
+      - task: docker:down
+      - task: clean
+
+  # Example tasks
+
+  run:simple:
+    desc: Run the simple example service
+    dir: examples/simple-service
+    cmds:
+      - echo "Starting simple-service..."
+      - go run main.go
+
+  run:postgres:
+    desc: Run the PostgreSQL example service (requires Docker)
+    deps: [docker:up]
+    dir: examples/postgresql-service
+    env:
+      DATABASE_URL: '{{.POSTGRES_URL}}'
+    cmds:
+      - echo "Starting postgresql-service..."
+      - go run main.go
+
+  run:redis:
+    desc: Run the Redis example service (requires Docker)
+    deps: [docker:up]
+    dir: examples/redis-service
+    env:
+      REDIS_URL: '{{.REDIS_URL}}'
+    cmds:
+      - echo "Starting redis-service..."
+      - go run main.go
+
+  # Documentation tasks
+
+  docs:serve:
+    desc: Run Jekyll docs site locally
+    dir: docs
+    cmds:
+      - bundle install
+      - bundle exec jekyll serve
+
+  docs:build:
+    desc: Build Jekyll docs site
+    dir: docs
+    cmds:
+      - bundle exec jekyll build
+
+  # Git tasks
+
+  git:status:
+    desc: Show git status and branch info
+    cmds:
+      - git status
+      - echo ""
+      - echo "Branch - $(git branch --show-current)"
+      - echo "Commits ahead - $(git rev-list --count origin/main..HEAD 2>/dev/null || echo 'N/A')"
+
+  # Health check tasks
+
+  health:
+    desc: Check health endpoints (requires running service)
+    cmds:
+      - echo "Checking health endpoints..."
+      - curl -s http://localhost:8081/health | jq . || echo "⚠️  Service not running"
+
+  health:live:
+    desc: Check liveness endpoint
+    cmds:
+      - curl -s http://localhost:8081/health/live | jq . || echo "⚠️  Service not running"
+
+  health:ready:
+    desc: Check readiness endpoint
+    cmds:
+      - curl -s http://localhost:8081/health/ready | jq . || echo "⚠️  Service not running"
