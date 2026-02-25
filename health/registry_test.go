@@ -329,6 +329,79 @@ func TestRegistry_MixedChecks(t *testing.T) {
 	}
 }
 
+func TestRegistry_MustRegister_Success(t *testing.T) {
+	registry := NewRegistry(nil)
+	check := NewAlwaysHealthyCheck("must-check")
+	cfg := DefaultCheckConfig("must-check")
+	// Should not panic
+	registry.MustRegister(check, cfg)
+}
+
+func TestRegistry_MustRegister_Panic(t *testing.T) {
+	registry := NewRegistry(nil)
+	check := NewAlwaysHealthyCheck("must-check")
+	cfg := DefaultCheckConfig("must-check")
+	registry.MustRegister(check, cfg)
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic on duplicate MustRegister")
+		}
+	}()
+	registry.MustRegister(check, cfg)
+}
+
+func TestRegistry_GetRegisteredChecks(t *testing.T) {
+	registry := NewRegistry(nil)
+	check1 := NewAlwaysHealthyCheck("check-1")
+	check2 := NewAlwaysHealthyCheck("check-2")
+	registry.MustRegister(check1, DefaultCheckConfig("check-1"))
+	registry.MustRegister(check2, DefaultCheckConfig("check-2"))
+
+	names := registry.GetRegisteredChecks()
+	if len(names) != 2 {
+		t.Fatalf("expected 2 registered checks, got %d", len(names))
+	}
+	found := map[string]bool{}
+	for _, n := range names {
+		found[n] = true
+	}
+	if !found["check-1"] || !found["check-2"] {
+		t.Errorf("expected check-1 and check-2, got %v", names)
+	}
+}
+
+func TestRegistry_GetCheckConfig(t *testing.T) {
+	registry := NewRegistry(nil)
+	cfg := DefaultCheckConfig("db")
+	cfg.Required = false
+	registry.MustRegister(NewAlwaysHealthyCheck("db"), cfg)
+
+	got, ok := registry.GetCheckConfig("db")
+	if !ok {
+		t.Fatal("expected GetCheckConfig to return true for registered check")
+	}
+	if got.Name != "db" {
+		t.Errorf("expected config name 'db', got %q", got.Name)
+	}
+	if got.Required {
+		t.Error("expected Required=false")
+	}
+
+	_, ok2 := registry.GetCheckConfig("nonexistent")
+	if ok2 {
+		t.Error("expected GetCheckConfig to return false for unknown check")
+	}
+}
+
+func TestNoopLogger_AllMethods(t *testing.T) {
+	var l NoopLogger
+	l.Debug("debug", "k", "v")
+	l.Info("info", "k", "v")
+	l.Warn("warn", "k", "v")
+	l.Error("error", "k", "v")
+}
+
 // Test helper: custom check with configurable behavior
 type testCheck struct {
 	name         string
