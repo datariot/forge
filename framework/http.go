@@ -124,6 +124,11 @@ func NewHTTPServerBuilder(app *App, config HTTPServerConfig) *HTTPServerBuilder 
 	}
 }
 
+// RegisterCustomRoutes registers custom HTTP routes with the server.
+func (b *HTTPServerBuilder) RegisterCustomRoutes(registerFunc func(*http.ServeMux)) {
+	registerFunc(b.mux)
+}
+
 // Build constructs the HTTP server with all configured endpoints and middleware.
 func (b *HTTPServerBuilder) Build() *http.Server {
 	// Validate configuration before building
