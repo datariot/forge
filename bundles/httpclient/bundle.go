@@ -78,6 +78,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/rs/zerolog"
 	"github.com/sony/gobreaker"
 
 	"github.com/datariot/forge/errors"
@@ -285,6 +286,7 @@ type Bundle struct {
 	config         Config
 	client         *Client
 	circuitBreaker *gobreaker.CircuitBreaker
+	logger         zerolog.Logger
 }
 
 // NewBundle creates a new HTTP client bundle.
@@ -303,6 +305,12 @@ func (b *Bundle) Name() string {
 func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.config.Validate(); err != nil {
 		return errors.ErrInvalidConfiguration.WithMessage("HTTP client configuration validation failed").WithCause(err)
+	}
+
+	if app != nil {
+		b.logger = app.Logger().WithService("http-client", "httpclient")
+	} else {
+		b.logger = zerolog.Nop()
 	}
 
 	// Create HTTP transport with secure defaults
@@ -372,6 +380,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 		config:         b.config,
 		circuitBreaker: b.circuitBreaker,
 		backoffFactory: b.createBackoffStrategy,
+		logger:         b.logger,
 	}
 
 	return nil
@@ -416,10 +425,11 @@ func (b *Bundle) createBackoffStrategy() backoff.BackOff {
 
 // Client provides enhanced HTTP client functionality with retries, circuit breaker, and observability.
 type Client struct {
-	httpClient       *http.Client
-	config           Config
-	circuitBreaker   *gobreaker.CircuitBreaker
-	backoffFactory   func() backoff.BackOff
+	httpClient     *http.Client
+	config         Config
+	circuitBreaker *gobreaker.CircuitBreaker
+	backoffFactory func() backoff.BackOff
+	logger         zerolog.Logger
 }
 
 // HTTPError represents an HTTP error response.
@@ -648,8 +658,11 @@ func (c *Client) logRequest(req *http.Request, body []byte) {
 	// Filter sensitive headers from logging
 	safeURL := c.sanitizeURLForLogging(req.URL.String())
 
-	// TODO: Integrate with framework logging when available
-	fmt.Printf("HTTP Request: %s %s, Body: %s\n", req.Method, safeURL, logBody)
+	c.logger.Debug().
+		Str("method", req.Method).
+		Str("url", safeURL).
+		Str("body", logBody).
+		Msg("HTTP Request")
 }
 
 // logResponse logs HTTP response details with security filtering.
@@ -670,8 +683,12 @@ func (c *Client) logResponse(resp *http.Response, body []byte, duration time.Dur
 		}
 	}
 
-	// TODO: Integrate with framework logging when available
-	fmt.Printf("HTTP Response: %d %s, Duration: %v, Body: %s\n", resp.StatusCode, resp.Status, duration, logBody)
+	c.logger.Debug().
+		Int("status_code", resp.StatusCode).
+		Str("status", resp.Status).
+		Dur("duration", duration).
+		Str("body", logBody).
+		Msg("HTTP Response")
 }
 
 // sanitizeURLForLogging removes sensitive query parameters from URLs for logging.
@@ -697,8 +714,12 @@ func (c *Client) sanitizeURLForLogging(rawURL string) string {
 
 // logRequestError logs HTTP request errors.
 func (c *Client) logRequestError(method, url string, duration time.Duration, err error) {
-	// TODO: Integrate with framework logging when available
-	fmt.Printf("HTTP Request Error: %s %s, Duration: %v, Error: %v\n", method, url, duration, err)
+	c.logger.Error().
+		Str("method", method).
+		Str("url", url).
+		Dur("duration", duration).
+		Err(err).
+		Msg("HTTP Request Error")
 }
 
 // buildURL constructs the full URL from base URL and path.

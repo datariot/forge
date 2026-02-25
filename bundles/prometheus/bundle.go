@@ -90,6 +90,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
 
 	"github.com/datariot/forge/errors"
 	"github.com/datariot/forge/framework"
@@ -201,6 +202,7 @@ type Bundle struct {
 	config   Config
 	registry prometheus.Registerer
 	gatherer prometheus.Gatherer
+	logger   zerolog.Logger
 
 	// Application metrics
 	httpRequestsTotal     *prometheus.CounterVec
@@ -211,12 +213,12 @@ type Bundle struct {
 	healthCheckTotal      *prometheus.CounterVec
 
 	// Bundle integration metrics
-	dbConnectionsActive   prometheus.Gauge
-	dbConnectionsIdle     prometheus.Gauge
+	dbConnectionsActive    prometheus.Gauge
+	dbConnectionsIdle      prometheus.Gauge
 	redisConnectionsActive prometheus.Gauge
-	redisConnectionsIdle  prometheus.Gauge
-	jwtTokensValidated    *prometheus.CounterVec
-	circuitBreakerState   *prometheus.GaugeVec
+	redisConnectionsIdle   prometheus.Gauge
+	jwtTokensValidated     *prometheus.CounterVec
+	circuitBreakerState    *prometheus.GaugeVec
 }
 
 // NewBundle creates a new Prometheus metrics bundle.
@@ -236,6 +238,8 @@ func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.config.Validate(); err != nil {
 		return errors.ErrInvalidConfiguration.WithMessage("Prometheus configuration validation failed").WithCause(err)
 	}
+
+	b.logger = app.Logger().WithService("prometheus", "prometheus")
 
 	// Use provided registry or create new one
 	if b.config.Registry != nil {
@@ -857,8 +861,7 @@ func (b *Bundle) StartMetricsCollection(ctx context.Context, collectors []Metric
 			case <-ticker.C:
 				for _, collector := range collectors {
 					if err := collector.CollectMetrics(ctx, b); err != nil {
-						// TODO: Log error when framework logging is available
-						fmt.Printf("Metrics collection error: %v\n", err)
+						b.logger.Error().Err(err).Msg("Metrics collection error")
 					}
 				}
 			case <-ctx.Done():

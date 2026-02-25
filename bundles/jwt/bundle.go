@@ -87,6 +87,9 @@ import (
 	"github.com/datariot/forge/framework"
 )
 
+// validServiceIdentifierRe matches service identifiers: alphanumeric, hyphens, and underscores only.
+var validServiceIdentifierRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
 // Config contains JWT authentication configuration.
 type Config struct {
 	// SecretKey is the HMAC secret key for signing and validating tokens.
@@ -645,8 +648,7 @@ func validateServiceIdentifier(identifier string) error {
 
 	// Service identifiers should only contain alphanumeric characters, hyphens, and underscores
 	// This prevents injection attacks and ensures safe usage in logs and metrics
-	validFormat := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-	if !validFormat.MatchString(identifier) {
+	if !validServiceIdentifierRe.MatchString(identifier) {
 		return fmt.Errorf("identifier contains invalid characters, only alphanumeric, hyphens, and underscores allowed")
 	}
 
