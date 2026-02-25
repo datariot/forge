@@ -103,6 +103,12 @@ type Component interface {
 	Stop(ctx context.Context) error
 }
 
+// HTTPRegistrar represents a component that can register HTTP routes.
+type HTTPRegistrar interface {
+	// RegisterHTTPRoutes registers HTTP routes with the provided mux.
+	RegisterHTTPRoutes(mux *http.ServeMux)
+}
+
 // Registrar represents a service that can register gRPC handlers.
 // Components that expose gRPC services should implement this interface
 // to register their handlers with the framework's gRPC server.
@@ -204,13 +210,13 @@ type ShutdownHook func(ctx context.Context, app *App) error
 // startup, runtime, and graceful shutdown of all registered components and services.
 //
 // The App follows a sophisticated startup sequence:
-//   1. Configuration validation
-//   2. Logging and observability initialization
-//   3. Bundle initialization (in registration order)
-//   4. Startup hook execution
-//   5. gRPC and HTTP server startup
-//   6. Component startup (in registration order)
-//   7. Health check registration and readiness marking
+//  1. Configuration validation
+//  2. Logging and observability initialization
+//  3. Bundle initialization (in registration order)
+//  4. Startup hook execution
+//  5. gRPC and HTTP server startup
+//  6. Component startup (in registration order)
+//  7. Health check registration and readiness marking
 //
 // Shutdown happens in reverse order with proper timeout handling.
 // The App ensures all resources are cleaned up gracefully on termination.
@@ -220,9 +226,9 @@ type App struct {
 	startAt time.Time
 
 	// Core managers
-	logging        *LoggingManager
-	observability  *ObservabilityManager
-	healthRegistry *forgeHealth.Registry
+	logging          *LoggingManager
+	observability    *ObservabilityManager
+	healthRegistry   *forgeHealth.Registry
 	grpcHealthServer *health.Server
 
 	// Servers
@@ -255,8 +261,8 @@ type AppOption func(*App) error
 // New creates a new service application with the given options.
 func New(options ...AppOption) (*App, error) {
 	app := &App{
-		version:       "development",
-		startAt:       time.Now(),
+		version:            "development",
+		startAt:            time.Now(),
 		components:         make([]Component, 0),
 		registrars:         make([]Registrar, 0),
 		bundles:            make([]Bundle, 0),
@@ -752,6 +758,14 @@ func (a *App) startHTTPServer(ctx context.Context) error {
 
 	// Build enhanced HTTP server
 	builder := NewHTTPServerBuilder(a, httpConfig)
+
+	// Register custom routes if any components provide them
+	for _, component := range a.components {
+		if httpRegistrar, ok := component.(HTTPRegistrar); ok {
+			builder.RegisterCustomRoutes(httpRegistrar.RegisterHTTPRoutes)
+		}
+	}
+
 	a.httpServer = builder.Build()
 
 	// Start server in goroutine
