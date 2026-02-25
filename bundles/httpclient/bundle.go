@@ -371,7 +371,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 		httpClient:     httpClient,
 		config:         b.config,
 		circuitBreaker: b.circuitBreaker,
-		backoff:        b.createBackoffStrategy(),
+		backoffFactory: b.createBackoffStrategy,
 	}
 
 	return nil
@@ -416,10 +416,10 @@ func (b *Bundle) createBackoffStrategy() backoff.BackOff {
 
 // Client provides enhanced HTTP client functionality with retries, circuit breaker, and observability.
 type Client struct {
-	httpClient     *http.Client
-	config         Config
-	circuitBreaker *gobreaker.CircuitBreaker
-	backoff        backoff.BackOff
+	httpClient       *http.Client
+	config           Config
+	circuitBreaker   *gobreaker.CircuitBreaker
+	backoffFactory   func() backoff.BackOff
 }
 
 // HTTPError represents an HTTP error response.
@@ -517,8 +517,8 @@ func (c *Client) executeWithRetry(ctx context.Context, method, url string, body 
 		return c.executeRequest(ctx, method, url, body, dest)
 	}
 
-	// Create backoff with context
-	b := backoff.WithContext(c.backoff, ctx)
+	// Create a fresh backoff instance per request to avoid shared mutable state
+	b := backoff.WithContext(c.backoffFactory(), ctx)
 
 	// Retry with backoff
 	err := backoff.Retry(operation, b)
