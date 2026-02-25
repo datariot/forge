@@ -91,6 +91,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 
 	"github.com/datariot/forge/errors"
@@ -170,6 +171,7 @@ type Bundle struct {
 	loader       *Loader
 	watcher      *fsnotify.Watcher
 	watchedFiles []string
+	logger       zerolog.Logger
 	mu           sync.RWMutex
 }
 
@@ -189,6 +191,12 @@ func (b *Bundle) Name() string {
 func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.config.Validate(); err != nil {
 		return errors.ErrInvalidConfiguration.WithMessage("Configuration loader validation failed").WithCause(err)
+	}
+
+	if app != nil {
+		b.logger = app.Logger().WithService("config-loader", "configloader")
+	} else {
+		b.logger = zerolog.Nop()
 	}
 
 	// Create loader
@@ -692,8 +700,7 @@ func (b *Bundle) StartWatching(ctx context.Context, dest interface{}) error {
 				if event.Op&fsnotify.Write == fsnotify.Write {
 					// Reload configuration
 					if _, err := b.loader.Load(dest); err != nil {
-						// TODO: Log error when framework logging is available
-						fmt.Printf("Configuration reload error: %v\n", err)
+						b.logger.Error().Err(err).Msg("configuration reload error")
 						continue
 					}
 
@@ -712,8 +719,7 @@ func (b *Bundle) StartWatching(ctx context.Context, dest interface{}) error {
 				if !ok {
 					return
 				}
-				// TODO: Log error when framework logging is available
-				fmt.Printf("Configuration watcher error: %v\n", err)
+				b.logger.Error().Err(err).Msg("configuration watcher error")
 
 			case <-ctx.Done():
 				return
@@ -767,19 +773,27 @@ func (l *Loader) Reload(dest interface{}) (*LoadResult, error) {
 }
 
 // validateFilePath validates that a configuration file path is safe to access.
+// Relative paths are resolved to absolute paths via filepath.Abs before validation.
+// Paths containing ".." traversal sequences are rejected regardless of resolution outcome.
 func (l *Loader) validateFilePath(filename string) error {
-	// Clean the path to prevent traversal attacks
-	cleanPath := filepath.Clean(filename)
-
-	// Must be absolute path for security
-	if !filepath.IsAbs(cleanPath) {
-		return fmt.Errorf("configuration file path must be absolute")
+	if filename == "" {
+		return fmt.Errorf("configuration file path cannot be empty")
 	}
 
-	// Check for path traversal attempts
-	if strings.Contains(cleanPath, "..") {
+	// Reject inputs that contain path traversal sequences before any resolution.
+	// filepath.Clean / filepath.Abs would silently resolve "../../../etc/passwd" to
+	// a valid absolute path, making it look legitimate. We block such inputs explicitly.
+	if strings.Contains(filepath.Clean(filename), "..") {
 		return fmt.Errorf("path traversal not allowed in configuration file path")
 	}
+
+	// Resolve relative paths to absolute
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
+		return fmt.Errorf("failed to resolve configuration file path: %w", err)
+	}
+
+	cleanPath := filepath.Clean(absPath)
 
 	// If allowed paths are configured, validate against them
 	if len(l.config.AllowedPaths) > 0 {
