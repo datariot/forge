@@ -108,6 +108,18 @@ func (e DomainError) Unwrap() error {
 	return e.Cause
 }
 
+// Is implements the errors.Is interface by comparing error codes.
+// Two DomainErrors are considered equal if they share the same Code,
+// regardless of message or cause. This enables errors.Is(err, ErrRepositoryUnavailable)
+// to match variants created via WithMessage() or WithCause().
+func (e DomainError) Is(target error) bool {
+	var t DomainError
+	if errors.As(target, &t) {
+		return e.Code == t.Code
+	}
+	return false
+}
+
 // Common domain error definitions shared across services
 var (
 	// Configuration Errors (shared across services)

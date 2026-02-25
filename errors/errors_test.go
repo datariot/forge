@@ -2,6 +2,7 @@ package errors
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -203,6 +204,64 @@ func TestIsConfigurationError(t *testing.T) {
 				t.Errorf("Expected IsConfigurationError(%v) = %v, got %v", tt.err, tt.isConfigErr, result)
 			}
 		})
+	}
+}
+
+// TestDomainError_Is tests the Is() method for code-based equality
+func TestDomainError_Is(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		target error
+		want   bool
+	}{
+		{
+			name:   "same code different message",
+			err:    ErrRepositoryUnavailable.WithMessage("database connection failed"),
+			target: ErrRepositoryUnavailable,
+			want:   true,
+		},
+		{
+			name:   "same code with cause",
+			err:    ErrRepositoryUnavailable.WithCause(errors.New("timeout")),
+			target: ErrRepositoryUnavailable,
+			want:   true,
+		},
+		{
+			name:   "different codes",
+			err:    ErrRepositoryUnavailable,
+			target: ErrAuthenticationFailed,
+			want:   false,
+		},
+		{
+			name:   "target is non-domain error",
+			err:    ErrRepositoryUnavailable,
+			target: errors.New("plain error"),
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := errors.Is(tt.err, tt.target)
+			if got != tt.want {
+				t.Errorf("errors.Is(%v, %v) = %v, want %v", tt.err, tt.target, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDomainError_Is_ThroughWrappingChain tests errors.Is works through stdlib fmt.Errorf wrapping
+func TestDomainError_Is_ThroughWrappingChain(t *testing.T) {
+	base := ErrRepositoryUnavailable.WithMessage("db unavailable")
+	wrapped := fmt.Errorf("operation failed: %w", base)
+
+	if !errors.Is(wrapped, ErrRepositoryUnavailable) {
+		t.Error("expected errors.Is to match through fmt.Errorf wrapping chain")
+	}
+
+	if errors.Is(wrapped, ErrAuthenticationFailed) {
+		t.Error("expected errors.Is to NOT match different code through wrapping chain")
 	}
 }
 
