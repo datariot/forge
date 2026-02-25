@@ -284,6 +284,10 @@ func New(options ...AppOption) (*App, error) {
 		return nil, fmt.Errorf("config is required")
 	}
 
+	if err := app.config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
 	// Initialize logging
 	if app.logging == nil {
 		app.logging = NewLoggingManager(app.config)
@@ -303,9 +307,6 @@ func New(options ...AppOption) (*App, error) {
 		healthLogger := NewHealthLogger(app.logging)
 		app.healthRegistry = forgeHealth.NewRegistry(healthLogger)
 	}
-
-	// Initialize gRPC health server
-	app.grpcHealthServer = health.NewServer()
 
 	return app, nil
 }
@@ -538,9 +539,11 @@ func (a *App) Start(ctx context.Context) error {
 		logger.Debug().Int("hook_index", i).Msg("Startup hook executed successfully")
 	}
 
-	// Create and start gRPC server
-	if err := a.startGRPCServer(ctx); err != nil {
-		return fmt.Errorf("failed to start gRPC server: %w", err)
+	// Create and start gRPC server only if registrars are configured
+	if len(a.registrars) > 0 {
+		if err := a.startGRPCServer(ctx); err != nil {
+			return fmt.Errorf("failed to start gRPC server: %w", err)
+		}
 	}
 
 	// Create and start HTTP server
@@ -708,7 +711,8 @@ func (a *App) startGRPCServer(ctx context.Context) error {
 	// Create gRPC server with interceptors
 	a.grpcServer = grpc.NewServer(opts...)
 
-	// Register standard gRPC health service
+	// Initialize and register standard gRPC health service
+	a.grpcHealthServer = health.NewServer()
 	grpc_health_v1.RegisterHealthServer(a.grpcServer, a.grpcHealthServer)
 
 	// Enable gRPC reflection if configured
