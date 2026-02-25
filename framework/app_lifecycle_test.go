@@ -435,6 +435,64 @@ func TestApp_Lifecycle_Uptime(t *testing.T) {
 	}
 }
 
+// TestApp_Lifecycle_HTTPOnlyMode tests that an app with no gRPC registrars does not start a gRPC server.
+func TestApp_Lifecycle_HTTPOnlyMode(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "http-only-test"
+	cfg.GRPCAddr = ":0"
+	cfg.HTTPAddr = ":0"
+
+	component := &TestComponentWithCallbacks{}
+
+	app, err := New(
+		WithConfig(&cfg),
+		WithComponent(component),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create app: %v", err)
+	}
+
+	// No gRPC registrars — grpcServer should remain nil after start
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := app.Start(ctx); err != nil {
+		t.Fatalf("Failed to start HTTP-only app: %v", err)
+	}
+
+	// gRPC server must not have been created
+	if app.grpcServer != nil {
+		t.Error("Expected grpcServer to be nil when no registrars are configured")
+	}
+
+	// gRPC health server must not have been created
+	if app.grpcHealthServer != nil {
+		t.Error("Expected grpcHealthServer to be nil when no registrars are configured")
+	}
+
+	// Component should still have started
+	if !component.started {
+		t.Error("Expected component to be started")
+	}
+
+	// HTTP server should be running (non-nil)
+	if app.httpServer == nil {
+		t.Error("Expected httpServer to be non-nil")
+	}
+
+	// Stop should succeed without error
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopCancel()
+
+	if err := app.Stop(stopCtx); err != nil {
+		t.Fatalf("Failed to stop HTTP-only app: %v", err)
+	}
+
+	if app.IsRunning() {
+		t.Error("App should not be running after Stop()")
+	}
+}
+
 // Helper test component with callback functions
 type TestComponentWithCallbacks struct {
 	started      bool
