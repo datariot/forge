@@ -103,7 +103,7 @@ task docker:down         # Stop services
 task test:coverage       # Generates coverage.html
 ```
 
-Current test coverage: **29.7%** (Target: 70%+)
+Current test coverage: **70.0%** (Target: 70%+)
 
 See [TESTING.md](TESTING.md) for comprehensive testing strategy.
 
