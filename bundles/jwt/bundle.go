@@ -559,6 +559,7 @@ func (b *Bundle) GenerateServiceToken(permissions []string) (string, error) {
 type tokenCache struct {
 	mu     sync.RWMutex
 	tokens map[string]*cachedToken
+	done   chan struct{}
 }
 
 // cachedToken represents a cached JWT token with expiry.
@@ -571,12 +572,18 @@ type cachedToken struct {
 func newTokenCache() *tokenCache {
 	cache := &tokenCache{
 		tokens: make(map[string]*cachedToken),
+		done:   make(chan struct{}),
 	}
 
 	// Start cleanup goroutine to remove expired tokens
 	go cache.cleanup()
 
 	return cache
+}
+
+// stop signals the cleanup goroutine to exit.
+func (tc *tokenCache) stop() {
+	close(tc.done)
 }
 
 // getOrGenerate gets a cached token or generates a new one if needed.
@@ -613,15 +620,20 @@ func (tc *tokenCache) cleanup() {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		now := time.Now()
-		tc.mu.Lock()
-		for key, cached := range tc.tokens {
-			if now.After(cached.expiresAt) {
-				delete(tc.tokens, key)
+	for {
+		select {
+		case <-tc.done:
+			return
+		case <-ticker.C:
+			now := time.Now()
+			tc.mu.Lock()
+			for key, cached := range tc.tokens {
+				if now.After(cached.expiresAt) {
+					delete(tc.tokens, key)
+				}
 			}
+			tc.mu.Unlock()
 		}
-		tc.mu.Unlock()
 	}
 }
 
@@ -652,6 +664,8 @@ func validateServiceIdentifier(identifier string) error {
 // Stop implements the Bundle interface for graceful shutdown.
 // JWT bundle has no persistent resources requiring cleanup.
 func (b *Bundle) Stop(ctx context.Context) error {
-	// No resources to clean up (token cache is in-memory only)
+	if b.tokenCache != nil {
+		b.tokenCache.stop()
+	}
 	return nil
 }

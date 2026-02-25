@@ -599,19 +599,23 @@ func (a *App) Stop(ctx context.Context) error {
 	// Create shutdown orchestrator with proper timeout
 	orchestrator := NewShutdownOrchestrator(a.config.ShutdownTimeout)
 
-	// Register shutdown hooks in proper order (reverse of startup)
+	// Register shutdown hooks in reverse of the desired execution order.
+	// The orchestrator executes hooks in reverse-registration order, so we
+	// register: bundles → components → user-hooks, which executes as:
+	// user-hooks → components → bundles (correct: business logic stops
+	// before the infrastructure it depends on).
 
-	// 1. User-defined shutdown hooks (register in forward order, orchestrator executes in reverse)
-	for i := 0; i < len(a.shutdownHooks); i++ {
-		hook := a.shutdownHooks[i] // Create local copy for closure
-		orchestrator.RegisterHook(fmt.Sprintf("user-hook-%d", i), func(currentHook ShutdownHook) func(context.Context) error {
+	// 1. Bundles (registered first, executed last — infrastructure tears down after consumers)
+	for i := 0; i < len(a.bundles); i++ {
+		bundle := a.bundles[i] // Create local copy for closure
+		orchestrator.RegisterHook(fmt.Sprintf("bundle-%s", bundle.Name()), func(currentBundle Bundle) func(context.Context) error {
 			return func(ctx context.Context) error {
-				return currentHook(ctx, a)
+				return currentBundle.Stop(ctx)
 			}
-		}(hook))
+		}(bundle))
 	}
 
-	// 2. Components (register in forward order, orchestrator will execute in reverse)
+	// 2. Components (registered second, executed second — business logic stops before bundles)
 	for i := 0; i < len(a.components); i++ {
 		component := a.components[i] // Create local copy for closure
 		orchestrator.RegisterHook(fmt.Sprintf("component-%d", i), func(currentComponent Component) func(context.Context) error {
@@ -621,14 +625,14 @@ func (a *App) Stop(ctx context.Context) error {
 		}(component))
 	}
 
-	// 3. Bundles (register in forward order, orchestrator executes in reverse)
-	for i := 0; i < len(a.bundles); i++ {
-		bundle := a.bundles[i] // Create local copy for closure
-		orchestrator.RegisterHook(fmt.Sprintf("bundle-%s", bundle.Name()), func(currentBundle Bundle) func(context.Context) error {
+	// 3. User-defined shutdown hooks (registered last, executed first)
+	for i := 0; i < len(a.shutdownHooks); i++ {
+		hook := a.shutdownHooks[i] // Create local copy for closure
+		orchestrator.RegisterHook(fmt.Sprintf("user-hook-%d", i), func(currentHook ShutdownHook) func(context.Context) error {
 			return func(ctx context.Context) error {
-				return currentBundle.Stop(ctx)
+				return currentHook(ctx, a)
 			}
-		}(bundle))
+		}(hook))
 	}
 
 	// 4. gRPC server
