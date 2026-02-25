@@ -214,17 +214,17 @@ func (c *Config) Validate() error {
 // This removes sensitive credentials while preserving connection information.
 func (c *Config) SanitizedRedisURL() string {
 	parsedURL, err := url.Parse(c.RedisURL)
-	if err != nil {
-		return "[invalid-redis-url]"
+	if err != nil || parsedURL.Scheme == "" {
+		return "[invalid URL]"
 	}
 
-	// Replace credentials with placeholder
+	// Replace credentials with masked placeholder, avoiding URL encoding
 	if parsedURL.User != nil {
 		username := parsedURL.User.Username()
 		if username == "" {
 			username = "[user]"
 		}
-		parsedURL.User = url.UserPassword(username, "[password]")
+		return parsedURL.Scheme + "://" + username + ":***@" + parsedURL.Host + parsedURL.RequestURI()
 	}
 
 	return parsedURL.String()

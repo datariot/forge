@@ -522,10 +522,10 @@ func (a *App) Start(ctx context.Context) error {
 	logger.Info().Msg("Observability initialized")
 
 	// Initialize bundles
-	for i, bundle := range a.bundles {
+	for _, bundle := range a.bundles {
 		bundleName := bundle.Name()
 		if err := bundle.Initialize(a); err != nil {
-			return fmt.Errorf("failed to initialize bundle %d (%s): %w", i, bundleName, err)
+			return fmt.Errorf("failed to initialize bundle %s: %w", bundleName, err)
 		}
 		logger.Info().Str("bundle", bundleName).Msg("Bundle initialized")
 	}
