@@ -11,11 +11,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 
 	"github.com/datariot/forge/config"
 	"github.com/datariot/forge/framework"
@@ -292,6 +294,11 @@ func AssertFalse(t *testing.T, condition bool, message string) {
 	if condition {
 		t.Fatalf("Expected condition to be false: %s", message)
 	}
+}
+
+// NewLogger returns a zerolog.Logger suitable for testing (writes to os.Stderr).
+func NewLogger() zerolog.Logger {
+	return zerolog.New(os.Stderr).With().Timestamp().Logger()
 }
 
 // Integration test helpers (require build tag: integration)
