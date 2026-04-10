@@ -4,147 +4,347 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## About Forge
 
-Forge is a batteries-included Go framework for building production-ready microservices, inspired by DropWizard but designed for Go's strengths. It provides opinionated defaults while maintaining flexibility through a pluggable architecture.
+Forge is a batteries-included Go framework for building production-ready microservices, inspired by DropWizard. It emphasizes Clean Architecture principles, component-based design, and production readiness with built-in observability, health checks, and graceful lifecycle management.
+
+**Philosophy**: "Batteries included" but lightweight - carefully evaluate third-party dependencies before adding them.
 
 ## Common Commands
 
 ### Building and Testing
 ```bash
-# Build the framework
-task build
-# OR
+# Build all packages
 go build ./...
 
-# Run all unit tests
-task test
-# OR
+# Run all tests
 go test ./...
 
 # Run tests with verbose output
-task test:verbose
+go test -v ./...
 
 # Run tests for specific package
-task test:package PKG=./framework
-task test:package PKG=./bundles/postgresql
+go test ./framework
+go test ./bundles/postgresql
 
 # Check for race conditions
-task test:race
+go test -race ./...
 
-# Run with coverage report
-task test:coverage
-# Opens coverage.html in browser
+# Run integration tests (requires Docker services)
+go test -tags=integration ./...
 
-# Run integration tests (requires Docker)
-task test:integration
-# Starts PostgreSQL + Redis, runs tests, cleans up
-
-# Watch mode (requires 'entr')
-task test:watch
-
-# See all available tasks
-task --list
+# Run benchmarks
+go test -bench=. -benchmem ./...
 ```
 
 ### Code Quality
 ```bash
-# Format code
-task fmt
-# OR
+# Format code (always run before committing)
 go fmt ./...
 
 # Vet code for issues
-task vet
+go vet ./...
 
-# Run all linters
-task lint
-
-# Auto-fix lint issues
-task lint:fix
+# Static analysis (if golangci-lint available)
+golangci-lint run
 ```
 
 ### Module Management
 ```bash
 # Tidy dependencies
-task deps:tidy
-# OR
 go mod tidy
 
 # Download dependencies
-task deps
+go mod download
 
 # Verify dependencies
-task deps:verify
+go mod verify
+```
 
-# Update all dependencies
-task deps:update
+### Documentation Site
+```bash
+# Run Jekyll docs site locally
+cd docs
+bundle install
+bundle exec jekyll serve
+# Site available at http://localhost:4000/forge/
 ```
 
 ## Architecture Overview
 
-Forge follows Clean Architecture principles with these key components:
+Forge implements Clean Architecture with these core concepts:
 
-### Core Framework (`framework/`)
-- **App (`framework/app.go`)**: Main application struct with lifecycle management, component registration, and graceful shutdown orchestration
-- **Component Interface**: Services implement `Start(ctx)` and `Stop(ctx)` methods for lifecycle management
-- **Bundle Interface**: Reusable functionality packages that initialize themselves with the app
-- **Logging Manager**: Structured logging with OpenTelemetry integration
-- **Observability Manager**: Built-in tracing, metrics, and telemetry
-- **Health Registry**: Comprehensive health checks with liveness/readiness endpoints
+### Framework Core (`framework/`)
+The heart of Forge - orchestrates the entire application lifecycle:
+
+- **App (`app.go`)**: Central application struct managing lifecycle, component registration, bundle initialization, and graceful shutdown orchestration. The App uses a **builder pattern** with functional options (`WithConfig`, `WithComponent`, `WithBundle`, etc.)
+
+- **Component Interface**: Business logic implements `Start(ctx)` and `Stop(ctx)` methods. Components start in registration order and stop in reverse order during shutdown.
+
+- **Bundle Interface**: Pre-built integrations (PostgreSQL, Redis, JWT, etc.) that self-initialize with the App. Bundles implement `Initialize(app)` to set up resources and dependencies.
+
+- **HealthContributor Interface**: Components and bundles can provide health checks by implementing `HealthChecks() []health.Check`
+
+- **Hook System**:
+  - Startup hooks: Execute after bundles init, before servers start
+  - Shutdown hooks: Execute during graceful shutdown, before component stop
+
+### Lifecycle Orchestration
+The App coordinates startup/shutdown in this order:
+
+**Startup:**
+1. Initialize observability (OpenTelemetry, metrics, logging)
+2. Initialize bundles (in registration order)
+3. Execute startup hooks
+4. Start gRPC server (port from `GRPC_ADDR`, default `:8080`)
+5. Start HTTP server for health checks (port from `HTTP_ADDR`, default `:8081`)
+6. Start components (in registration order)
+7. Mark service as ready
+
+**Shutdown (reverse order with timeout handling):**
+1. Mark service as not ready
+2. Stop components (reverse registration order)
+3. Stop HTTP server (with drain period)
+4. Stop gRPC server (with graceful stop)
+5. Execute shutdown hooks
+6. Stop bundles (reverse order)
+7. Flush observability telemetry
 
 ### Configuration (`config/`)
-- **BaseConfig**: Common configuration for all services using environment variables and YAML
-- Environment-based config with sensible defaults (development, staging, production)
-- Built-in validation with the `Validator` interface
-- Configuration includes gRPC/HTTP server settings, timeouts, and observability settings
+- **BaseConfig (`base.go`)**: Environment-driven configuration for all services with validation
+- Supports development, staging, production environments
+- Uses YAML files + environment variable overrides
+- Components requiring configuration should embed `BaseConfig` and add service-specific fields
+- Always implement the `Validator` interface for custom config structs
 
-### Key Patterns
-- **Graceful Lifecycle**: App orchestrates startup/shutdown with proper ordering and timeout handling
-- **Component Composition**: Business logic implements framework interfaces for clean integration
-- **Bundle System**: Pre-built integrations (PostgreSQL, Redis, etc.) can be added via `WithBundle()`
-- **Health Checks**: Components can contribute health checks via `HealthContributor` interface
-- **Hook System**: Startup and shutdown hooks for custom initialization/cleanup
+### Health Checks (`health/`)
+Kubernetes-compatible health check system with concurrent execution:
 
-### Application Structure
+- **Registry (`registry.go`)**: Manages and executes health checks concurrently with timeout handling
+- **Check Interface**: Components implement `Liveness(ctx)` and `Readiness(ctx)` methods
+- **HTTP Endpoints** (auto-exposed on HTTP server):
+  - `/health` - Combined liveness + readiness status
+  - `/health/live` - Liveness probe (is the service alive?)
+  - `/health/ready` - Readiness probe (ready to serve traffic?)
+
+### Available Bundles (`bundles/`)
+Pre-built integrations following the Bundle interface:
+
+- **postgresql**: Database connection pooling, health checks, lifecycle management
+- **redis**: Cache operations, pub/sub, distributed locking, rate limiting
+- **jwt**: Service-to-service authentication with gRPC/HTTP interceptors
+- **httpclient**: Resilient HTTP client with circuit breaker, retries, backoff
+- **prometheus**: Metrics collection and integration with framework
+- **configloader**: Multi-source configuration loading with hot reload
+
+Each bundle provides:
+- Self-contained initialization via `Initialize(app)`
+- Health checks via `HealthContributor` interface
+- Graceful cleanup in `Stop()` method
+- Production-ready defaults
+
+### Error Handling (`errors/`)
+Domain error patterns and classification utilities for consistent error handling across services.
+
+### Observability (`framework/observability.go`, `framework/logging.go`)
+Built-in production observability:
+
+- **OpenTelemetry**: Distributed tracing with configurable sampling rates
+- **Structured Logging**: JSON logging via zerolog with context propagation
+- **Metrics**: Ready for Prometheus integration (use prometheus bundle)
+- **Health Endpoints**: Kubernetes-compatible liveness/readiness probes
+
+## Creating a Service
+
+Standard pattern for building a Forge service:
+
+1. **Define Configuration**: Embed `config.BaseConfig` + service-specific fields
+2. **Implement Components**: Create structs implementing `Component` interface
+3. **Add Health Checks**: Optionally implement `HealthContributor` for dependencies
+4. **Build Application**: Use `framework.New()` with builder options
+5. **Run**: Call `app.Run(ctx)` which blocks until shutdown signal
+
+Example structure:
+```go
+type ServiceConfig struct {
+    config.BaseConfig `yaml:",inline"`
+    // Service-specific config fields
+}
+
+type ServiceComponent struct {
+    config *ServiceConfig
+    // Dependencies (db, redis, etc.)
+}
+
+func (c *ServiceComponent) Start(ctx context.Context) error { /* ... */ }
+func (c *ServiceComponent) Stop(ctx context.Context) error { /* ... */ }
+func (c *ServiceComponent) HealthChecks() []health.Check { /* ... */ }
+
+func main() {
+    cfg := LoadConfig()
+    component := NewServiceComponent(&cfg)
+
+    app, err := framework.New(
+        framework.WithConfig(&cfg.BaseConfig),
+        framework.WithVersion("1.0.0"),
+        framework.WithComponent(component),
+        framework.WithBundle(postgresql.NewBundle(cfg.PostgreSQL)),
+        framework.WithHealthContributor(component),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    if err := app.Run(context.Background()); err != nil {
+        log.Fatal(err)
+    }
+}
 ```
-framework/          # Core framework implementation
-├── app.go         # Main App struct and lifecycle management
-├── logging.go     # Structured logging with OpenTelemetry
-├── observability.go  # Tracing and metrics setup
-└── shutdown.go    # Graceful shutdown orchestration
 
-config/            # Configuration management
-└── base.go        # BaseConfig with environment integration
+See `examples/` directory for complete working examples.
 
-bundles/           # Pre-built integrations (empty in current codebase)
-adapters/          # Infrastructure adapters
-clients/           # External service clients
-health/            # Health check system
-errors/            # Error handling utilities
-examples/          # Example implementations
+## Testing Strategy
+
+**Current Status**: Framework requires comprehensive test coverage before production use.
+
+See `TESTING.md` for detailed testing plan. Key points:
+
+- **Target Coverage**: 85%+ for bundles, 90%+ for framework core
+- **Test Categories**: Unit tests, integration tests (with Docker), E2E tests, security tests, performance benchmarks
+- **Test Tags**: Use `-tags=integration` for tests requiring real infrastructure
+- **Test Naming**: `TestComponentName_MethodName_ExpectedBehavior`
+- **Integration Tests**: Require Docker for PostgreSQL, Redis, etc.
+
+Run example services to validate functionality:
+```bash
+cd examples/simple-service
+go run main.go
+# Check health at http://localhost:8081/health
 ```
 
-### Creating a Service
-Services typically:
-1. Define a config struct embedding `config.BaseConfig`
-2. Implement business components with `Component` interface
-3. Use `framework.New()` with options to build the app:
-   - `WithConfig()`: Service configuration
-   - `WithComponent()`: Business logic components
-   - `WithBundle()`: Pre-built integrations
-   - `WithGRPCRegistrar()`: gRPC service registration
-   - `WithHealthContributor()`: Health checks
+## Directory Structure
 
-### Server Configuration
-- **gRPC Server**: Runs on `GRPC_ADDR` (default `:8080`)
-- **HTTP Server**: Health endpoints on `HTTP_ADDR` (default `:8081`)
-  - `/health`: Overall health status
-  - `/health/ready`: Readiness probe
-  - `/health/live`: Liveness probe
+```
+forge/
+├── framework/          # Core framework (app lifecycle, logging, observability, shutdown)
+├── config/             # Configuration management (BaseConfig, validation, env detection)
+├── health/             # Health check system (registry, status, concurrent execution)
+├── bundles/            # Pre-built integrations (postgresql, redis, jwt, etc.)
+├── errors/             # Error handling utilities
+├── examples/           # Example service implementations
+├── docs/               # GitHub Pages documentation site (Jekyll)
+├── testutil/           # Testing utilities (empty, to be implemented)
+├── TESTING.md          # Comprehensive testing strategy
+└── CLAUDE.md           # This file
+```
 
-### Observability
-Built-in support for:
-- **OpenTelemetry**: Distributed tracing with configurable sampling
-- **Structured Logging**: JSON logging with zerolog
-- **Metrics**: Ready for Prometheus integration
-- **Health Checks**: Kubernetes-compatible health endpoints
-- We want to be "batteries included" but also lightweight, so we need to evaluate 3rd party modules before adding them to the project.
+## Development Guidelines
+
+### Adding New Bundles
+When creating a new bundle:
+
+1. Implement the `Bundle` interface with `Initialize(app)` method
+2. Register resources with the App during initialization
+3. Provide health checks via `HealthContributor` interface
+4. Implement `Stop()` for graceful cleanup
+5. Follow existing bundle patterns (see `bundles/postgresql` or `bundles/redis`)
+6. Evaluate third-party dependencies carefully (lightweight philosophy)
+7. Add comprehensive tests (unit + integration)
+8. Document in `docs/bundles.md`
+
+### Modifying Framework Core
+Framework core changes require extra care:
+
+- Maintain backward compatibility where possible
+- Update lifecycle orchestration carefully (startup/shutdown order matters)
+- Add tests for new functionality (target 90%+ coverage)
+- Document breaking changes clearly
+- Update examples if interfaces change
+
+### Security Considerations
+- No hardcoded credentials (always use environment variables)
+- Validate all configuration inputs
+- Use TLS for production (gRPC and HTTP)
+- Implement proper authentication/authorization (JWT bundle)
+- Sanitize logs to prevent credential leakage
+- Follow OWASP security guidelines
+
+## Common Patterns
+
+### Component Dependencies
+Components receive dependencies via constructor injection:
+```go
+type MyComponent struct {
+    db    *sql.DB
+    cache redis.UniversalClient
+    cfg   *Config
+}
+
+func NewMyComponent(db *sql.DB, cache redis.UniversalClient, cfg *Config) *MyComponent {
+    return &MyComponent{db: db, cache: cache, cfg: cfg}
+}
+```
+
+### Bundle Registration Order
+Bundles initialize in registration order - put dependencies first:
+```go
+framework.New(
+    framework.WithBundle(postgresql.NewBundle(...)),  // First
+    framework.WithBundle(redis.NewBundle(...)),       // Second
+    framework.WithComponent(myComponent),             // Uses both DB and Redis
+)
+```
+
+### Health Check Patterns
+Health checks should be fast and focused:
+```go
+func (c *DatabaseCheck) Liveness(ctx context.Context) error {
+    return c.db.PingContext(ctx)  // Fast, lightweight
+}
+
+func (c *DatabaseCheck) Readiness(ctx context.Context) error {
+    // More comprehensive check
+    ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+    defer cancel()
+
+    var result int
+    err := c.db.QueryRowContext(ctx, "SELECT 1").Scan(&result)
+    return err
+}
+```
+
+### Graceful Shutdown
+Components should respect context cancellation:
+```go
+func (c *WorkerComponent) Start(ctx context.Context) error {
+    go func() {
+        for {
+            select {
+            case <-ctx.Done():
+                return  // Stop on context cancellation
+            case work := <-c.workQueue:
+                c.processWork(work)
+            }
+        }
+    }()
+    return nil
+}
+```
+
+## Troubleshooting
+
+### Health Check Failures
+- Check logs for specific health check errors
+- Verify database/redis/external service connectivity
+- Check timeout configuration (`HealthCheckTimeout`)
+- Use `/health/live` vs `/health/ready` to isolate issues
+
+### Startup Issues
+- Review startup logs for initialization errors
+- Check configuration validation errors
+- Verify bundle dependencies are registered in correct order
+- Ensure environment variables are set correctly
+
+### Shutdown Hangs
+- Check component `Stop()` methods respect context timeout
+- Review shutdown hooks for blocking operations
+- Increase shutdown timeout if needed (configured in BaseConfig)
+- Check for goroutine leaks preventing clean shutdown
