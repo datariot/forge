@@ -10,6 +10,8 @@ Forge is a batteries-included Go framework for building production-ready microse
 
 ## Common Commands
 
+[Taskfile](https://taskfile.dev) equivalents exist for all of these (`task --list`); the raw Go commands below work without it.
+
 ### Building and Testing
 ```bash
 # Build all packages
@@ -94,7 +96,7 @@ The App coordinates startup/shutdown in this order:
 1. Initialize observability (OpenTelemetry, metrics, logging)
 2. Initialize bundles (in registration order)
 3. Execute startup hooks
-4. Start gRPC server (port from `GRPC_ADDR`, default `:8080`)
+4. Start gRPC server (port from `GRPC_ADDR`, default `:8080`; only started when gRPC registrars are configured — HTTP-only services skip it)
 5. Start HTTP server for health checks (port from `HTTP_ADDR`, default `:8081`)
 6. Start components (in registration order)
 7. Mark service as ready
@@ -109,9 +111,9 @@ The App coordinates startup/shutdown in this order:
 7. Flush observability telemetry
 
 ### Configuration (`config/`)
-- **BaseConfig (`base.go`)**: Environment-driven configuration for all services with validation
+- **BaseConfig (`base.go`)**: Common configuration struct for all services with defaults and validation
 - Supports development, staging, production environments
-- Uses YAML files + environment variable overrides
+- BaseConfig itself carries yaml/env struct tags but does not read files or the environment; YAML file loading + environment variable overrides are provided by the `configloader` bundle. Without it, use `DefaultBaseConfig()` and set fields in code.
 - Components requiring configuration should embed `BaseConfig` and add service-specific fields
 - Always implement the `Validator` interface for custom config structs
 
@@ -203,7 +205,7 @@ See `examples/` directory for complete working examples.
 
 ## Testing Strategy
 
-**Current Status**: Framework requires comprehensive test coverage before production use.
+**Current Status**: ~70% overall coverage; CI enforces a 70% threshold. TESTING.md's 85-90% per-package targets are aspirational — the postgresql/redis bundles sit well below them without Docker-based integration runs.
 
 See `TESTING.md` for detailed testing plan. Key points:
 
@@ -231,7 +233,7 @@ forge/
 ├── errors/             # Error handling utilities
 ├── examples/           # Example service implementations
 ├── docs/               # GitHub Pages documentation site (Jekyll)
-├── testutil/           # Testing utilities (empty, to be implemented)
+├── testutil/           # Testing utilities (assertions, test configs, zerolog test logger)
 ├── TESTING.md          # Comprehensive testing strategy
 └── CLAUDE.md           # This file
 ```
@@ -334,7 +336,7 @@ func (c *WorkerComponent) Start(ctx context.Context) error {
 ### Health Check Failures
 - Check logs for specific health check errors
 - Verify database/redis/external service connectivity
-- Check timeout configuration (`HealthCheckTimeout`)
+- Check per-check timeout configuration (`CheckConfig.Timeout`)
 - Use `/health/live` vs `/health/ready` to isolate issues
 
 ### Startup Issues
