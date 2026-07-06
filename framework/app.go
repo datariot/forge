@@ -227,10 +227,11 @@ type App struct {
 	startAt time.Time
 
 	// Core managers
-	logging          *LoggingManager
-	observability    *ObservabilityManager
-	healthRegistry   *forgeHealth.Registry
-	grpcHealthServer *health.Server
+	logging            *LoggingManager
+	observability      *ObservabilityManager
+	healthRegistry     *forgeHealth.Registry
+	grpcHealthServer   *health.Server
+	grpcHealthSyncStop chan struct{}
 
 	// Servers
 	grpcServer       *grpc.Server
@@ -553,6 +554,20 @@ func (a *App) Start(ctx context.Context) error {
 		logger.Debug().Int("hook_index", i).Msg("Startup hook executed successfully")
 	}
 
+	// Start the health registry's background check runner now that bundles
+	// and startup hooks have registered their checks, but before servers
+	// start accepting traffic. From this point on, /health probes are
+	// served from cached results instead of running checks live.
+	//
+	// This intentionally uses a background context rather than the Start
+	// context above: the latter is only meant to bound startup itself (as
+	// with startGRPCServer/startHTTPServer), not the runner's lifetime.
+	// The runner is stopped explicitly in Stop.
+	if err := a.healthRegistry.Start(context.Background()); err != nil {
+		return fmt.Errorf("failed to start health registry: %w", err)
+	}
+	logger.Info().Msg("Health registry background runner started")
+
 	// Create and start gRPC server only if registrars are configured
 	if len(a.registrars) > 0 {
 		if err := a.startGRPCServer(ctx); err != nil {
@@ -588,6 +603,13 @@ func (a *App) Start(ctx context.Context) error {
 		logger.Info().Msg("Service marked as ready")
 	}
 
+	// Keep the gRPC health service in sync with cached background check
+	// results for the process lifetime, not just the startup snapshot.
+	if a.grpcHealthServer != nil {
+		a.grpcHealthSyncStop = make(chan struct{})
+		go a.syncGRPCHealthLoop(a.grpcHealthSyncStop)
+	}
+
 	a.running = true
 	logger.Info().Msg("Service started successfully")
 
@@ -612,6 +634,18 @@ func (a *App) Stop(ctx context.Context) error {
 	// Mark service as not ready immediately
 	a.healthRegistry.SetReady(false)
 	a.updateGRPCHealthStatus()
+
+	if a.grpcHealthSyncStop != nil {
+		close(a.grpcHealthSyncStop)
+		a.grpcHealthSyncStop = nil
+	}
+
+	// Stop the health registry's background check runner. This waits for
+	// in-flight check goroutines to notice cancellation and exit, bounded
+	// by ctx, so shutdown doesn't hang on a wedged dependency check.
+	if err := a.healthRegistry.Stop(ctx); err != nil {
+		logger.Warn().Err(err).Msg("health registry runner did not stop cleanly")
+	}
 
 	// Create shutdown orchestrator with proper timeout
 	orchestrator := NewShutdownOrchestrator(a.config.ShutdownTimeout)
@@ -894,6 +928,27 @@ func (a *App) updateGRPCHealthStatus() {
 			a.grpcHealthServer.SetServingStatus(checkName, grpc_health_v1.HealthCheckResponse_SERVING)
 		} else {
 			a.grpcHealthServer.SetServingStatus(checkName, grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+		}
+	}
+}
+
+// grpcHealthSyncInterval is how often the gRPC health service is refreshed
+// from the health registry's cached check results.
+const grpcHealthSyncInterval = 5 * time.Second
+
+// syncGRPCHealthLoop periodically mirrors health registry status into the
+// gRPC health service until the stop channel is closed. Reads are served
+// from the registry's cache, so each tick is a lock-and-copy, not live checks.
+func (a *App) syncGRPCHealthLoop(stop <-chan struct{}) {
+	ticker := time.NewTicker(grpcHealthSyncInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			a.updateGRPCHealthStatus()
 		}
 	}
 }
