@@ -6,16 +6,16 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
 	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	oteltrace "go.opentelemetry.io/otel/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/datariot/forge/config"
 )
@@ -42,10 +42,10 @@ func NewObservabilityConfig(baseConfig *config.BaseConfig, version string) *Obse
 
 // ObservabilityManager manages OpenTelemetry tracing and metrics.
 type ObservabilityManager struct {
-	config         *ObservabilityConfig
-	traceProvider  *trace.TracerProvider
-	meterProvider  *sdkmetric.MeterProvider
-	initialized    bool
+	config        *ObservabilityConfig
+	traceProvider *trace.TracerProvider
+	meterProvider *sdkmetric.MeterProvider
+	initialized   bool
 }
 
 // NewObservabilityManager creates a new observability manager.

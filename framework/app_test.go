@@ -16,10 +16,10 @@ import (
 
 // TestComponent is a test implementation of the Component interface
 type TestComponent struct {
-	started bool
-	stopped bool
+	started    bool
+	stopped    bool
 	startError error
-	stopError error
+	stopError  error
 }
 
 func (c *TestComponent) Start(ctx context.Context) error {
@@ -40,11 +40,11 @@ func (c *TestComponent) HealthChecks() []forgeHealth.Check {
 
 // TestBundle is a test implementation of the Bundle interface
 type TestBundle struct {
-	name string
-	initError error
+	name        string
+	initError   error
 	initialized bool
-	stopped bool
-	stopError error
+	stopped     bool
+	stopError   error
 }
 
 func (b *TestBundle) Name() string {
@@ -226,7 +226,7 @@ func TestApp_Start_BundleInitializationError(t *testing.T) {
 	cfg.ServiceName = "test-service"
 
 	bundle := &TestBundle{
-		name: "failing-bundle",
+		name:      "failing-bundle",
 		initError: fmt.Errorf("initialization failed"),
 	}
 
@@ -434,11 +434,6 @@ func TestApp_WithGRPCRegistrar_Nil(t *testing.T) {
 		t.Errorf("expected 'registrar cannot be nil', got %q", err.Error())
 	}
 }
-
-// testRegistrar implements Registrar for testing.
-type testRegistrar struct{}
-
-func (r *testRegistrar) RegisterGRPC(s *grpc.Server) error { return nil }
 
 func TestApp_WithGRPCRegistrar_Valid(t *testing.T) {
 	cfg := config.DefaultBaseConfig()
