@@ -40,8 +40,6 @@ type HTTPServerConfig struct {
 
 	// Request logging
 	EnableRequestLogging bool `yaml:"enable_request_logging" env:"ENABLE_REQUEST_LOGGING"`
-	LogRequestBody       bool `yaml:"log_request_body" env:"LOG_REQUEST_BODY"`
-	LogResponseBody      bool `yaml:"log_response_body" env:"LOG_RESPONSE_BODY"`
 }
 
 // DefaultHTTPServerConfig returns HTTP server configuration with sensible defaults.
@@ -56,8 +54,6 @@ func DefaultHTTPServerConfig() HTTPServerConfig {
 		MetricsPath:          "/metrics",
 		HealthPathPrefix:     "/health",
 		EnableRequestLogging: true,
-		LogRequestBody:       false,
-		LogResponseBody:      false,
 	}
 }
 
@@ -130,11 +126,10 @@ func (b *HTTPServerBuilder) RegisterCustomRoutes(registerFunc func(*http.ServeMu
 }
 
 // Build constructs the HTTP server with all configured endpoints and middleware.
-func (b *HTTPServerBuilder) Build() *http.Server {
+func (b *HTTPServerBuilder) Build() (*http.Server, error) {
 	// Validate configuration before building
 	if err := b.config.Validate(); err != nil {
-		b.logger.Error().Err(err).Msg("HTTP server configuration validation failed")
-		// Log error but continue with safe defaults rather than panicking
+		return nil, fmt.Errorf("HTTP server configuration validation failed: %w", err)
 	}
 
 	// Apply middleware stack
@@ -146,7 +141,7 @@ func (b *HTTPServerBuilder) Build() *http.Server {
 		ReadTimeout:  b.app.config.HTTPReadTimeout,
 		WriteTimeout: b.app.config.HTTPWriteTimeout,
 		IdleTimeout:  b.app.config.HTTPIdleTimeout,
-	}
+	}, nil
 }
 
 // buildHandler creates the complete HTTP handler with all endpoints and middleware.
@@ -325,18 +320,15 @@ func (b *HTTPServerBuilder) logHTTPRequest(r *http.Request, wrapper *responseWri
 
 // corsMiddleware adds CORS headers based on configuration.
 func (b *HTTPServerBuilder) corsMiddleware(next http.Handler) http.Handler {
+	// Wildcard+credentials safety is enforced by config Validate() at startup,
+	// so it is not re-checked on every request. Header values that don't vary
+	// per-request are joined once here rather than on every call.
+	hasWildcard := len(b.config.CORSOrigins) == 1 && b.config.CORSOrigins[0] == "*"
+	allowMethods := strings.Join(b.config.CORSMethods, ", ")
+	allowHeaders := strings.Join(b.config.CORSHeaders, ", ")
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-
-		// SECURITY: Validate CORS configuration safety
-		hasWildcard := len(b.config.CORSOrigins) == 1 && b.config.CORSOrigins[0] == "*"
-		if hasWildcard && b.config.CORSCredentials {
-			b.logger.Error().
-				Str("origin", origin).
-				Msg("SECURITY ERROR: Cannot use wildcard CORS with credentials - potential security vulnerability")
-			http.Error(w, "CORS configuration error", http.StatusInternalServerError)
-			return
-		}
 
 		// Set CORS headers safely
 		if b.isAllowedOrigin(origin) {
@@ -349,8 +341,8 @@ func (b *HTTPServerBuilder) corsMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		w.Header().Set("Access-Control-Allow-Methods", strings.Join(b.config.CORSMethods, ", "))
-		w.Header().Set("Access-Control-Allow-Headers", strings.Join(b.config.CORSHeaders, ", "))
+		w.Header().Set("Access-Control-Allow-Methods", allowMethods)
+		w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
 
 		if b.config.CORSCredentials {
 			w.Header().Set("Access-Control-Allow-Credentials", "true")

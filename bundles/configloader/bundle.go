@@ -51,13 +51,16 @@
 // # Environment Variable Binding
 //
 // The loader automatically binds environment variables based on:
+//
 //   - Field names (converted to UPPER_SNAKE_CASE)
+//
 //   - `env` struct tags for custom names
+//
 //   - `envPrefix` configuration for namespacing
 //
-//	DatabaseURL string `env:"DATABASE_URL"`           // Exact name
-//	APITimeout  int    `env:"API_TIMEOUT_SECONDS"`    // Custom name
-//	Debug       bool   // Automatic: DEBUG or MYSERVICE_DEBUG (with prefix)
+//     DatabaseURL string `env:"DATABASE_URL"`           // Exact name
+//     APITimeout  int    `env:"API_TIMEOUT_SECONDS"`    // Custom name
+//     Debug       bool   // Automatic: DEBUG or MYSERVICE_DEBUG (with prefix)
 //
 // # Hot Reload
 //
@@ -80,6 +83,7 @@ package configloader
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"os"
@@ -122,8 +126,8 @@ type Config struct {
 	SecureLogging bool
 
 	// Security configuration
-	MaxFileSize      int64    // Maximum configuration file size (default: 1MB)
-	AllowedPaths     []string // Allowed configuration file directories
+	MaxFileSize      int64       // Maximum configuration file size (default: 1MB)
+	AllowedPaths     []string    // Allowed configuration file directories
 	RequiredFileMode os.FileMode // Required file permissions (default: 0o644)
 }
 
@@ -149,13 +153,13 @@ func DefaultConfig() Config {
 // Validate validates the configuration loader settings.
 func (c *Config) Validate() error {
 	if len(c.ConfigPaths) == 0 {
-		return fmt.Errorf("at least one config path must be specified")
+		return stderrors.New("at least one config path must be specified")
 	}
 
 	// Validate config paths
 	for _, path := range c.ConfigPaths {
 		if path == "" {
-			return fmt.Errorf("config path cannot be empty")
+			return stderrors.New("config path cannot be empty")
 		}
 		if !filepath.IsAbs(path) && !strings.HasPrefix(path, "./") {
 			return fmt.Errorf("config path must be absolute or relative (starting with ./): %s", path)
@@ -172,7 +176,6 @@ type Bundle struct {
 	watcher      *fsnotify.Watcher
 	watchedFiles []string
 	logger       zerolog.Logger
-	mu           sync.RWMutex
 }
 
 // NewBundle creates a new configuration loading bundle.
@@ -238,7 +241,9 @@ func (b *Bundle) Stop(ctx context.Context) error {
 		return err
 	case <-ctx.Done():
 		// Force close after timeout
-		b.watcher.Close()
+		if closeErr := b.watcher.Close(); closeErr != nil {
+			b.logger.Error().Err(closeErr).Msg("failed to force-close config watcher")
+		}
 		return fmt.Errorf("config watcher close timed out: %w", ctx.Err())
 	}
 }
@@ -275,30 +280,30 @@ func (b *Bundle) initializeWatcher() error {
 
 // Loader provides configuration loading functionality.
 type Loader struct {
-	config      Config
-	loadedFrom  string
+	config          Config
+	loadedFrom      string
 	changeCallbacks []func(interface{})
-	mu          sync.RWMutex
+	mu              sync.RWMutex
 }
 
 // LoadResult contains information about the configuration loading process.
 type LoadResult struct {
-	LoadedFrom     string            `json:"loaded_from"`
-	Sources        []string          `json:"sources"`
-	EnvVarsUsed    []string          `json:"env_vars_used"`
-	DefaultsApplied []string         `json:"defaults_applied"`
-	ValidationErrors []string        `json:"validation_errors,omitempty"`
+	LoadedFrom       string   `json:"loaded_from"`
+	Sources          []string `json:"sources"`
+	EnvVarsUsed      []string `json:"env_vars_used"`
+	DefaultsApplied  []string `json:"defaults_applied"`
+	ValidationErrors []string `json:"validation_errors,omitempty"`
 }
 
 // Load loads configuration into the provided struct from multiple sources.
 func (l *Loader) Load(dest interface{}) (*LoadResult, error) {
 	if dest == nil {
-		return nil, fmt.Errorf("destination cannot be nil")
+		return nil, stderrors.New("destination cannot be nil")
 	}
 
 	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Struct {
-		return nil, fmt.Errorf("destination must be a pointer to a struct")
+	if destValue.Kind() != reflect.Pointer || destValue.Elem().Kind() != reflect.Struct {
+		return nil, stderrors.New("destination must be a pointer to a struct")
 	}
 
 	result := &LoadResult{
@@ -391,7 +396,7 @@ func (l *Loader) loadFromFile(filename string, dest interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to open config file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Use io.LimitReader to enforce size limits
 	limitedReader := io.LimitReader(file, l.config.MaxFileSize)
@@ -567,7 +572,7 @@ func (l *Loader) setFieldValue(field reflect.Value, value string) error {
 				field.Set(reflect.ValueOf(values))
 			}
 		} else {
-			return fmt.Errorf("unsupported slice type for field")
+			return stderrors.New("unsupported slice type for field")
 		}
 	default:
 		return fmt.Errorf("unsupported field type: %s", field.Kind())
@@ -685,7 +690,7 @@ func (l *Loader) OnConfigChange(callback func(interface{})) {
 // StartWatching starts watching configuration files for changes.
 func (b *Bundle) StartWatching(ctx context.Context, dest interface{}) error {
 	if b.watcher == nil {
-		return fmt.Errorf("file watcher not initialized")
+		return stderrors.New("file watcher not initialized")
 	}
 
 	go func() {
@@ -777,14 +782,14 @@ func (l *Loader) Reload(dest interface{}) (*LoadResult, error) {
 // Paths containing ".." traversal sequences are rejected regardless of resolution outcome.
 func (l *Loader) validateFilePath(filename string) error {
 	if filename == "" {
-		return fmt.Errorf("configuration file path cannot be empty")
+		return stderrors.New("configuration file path cannot be empty")
 	}
 
 	// Reject inputs that contain path traversal sequences before any resolution.
 	// filepath.Clean / filepath.Abs would silently resolve "../../../etc/passwd" to
 	// a valid absolute path, making it look legitimate. We block such inputs explicitly.
 	if strings.Contains(filepath.Clean(filename), "..") {
-		return fmt.Errorf("path traversal not allowed in configuration file path")
+		return stderrors.New("path traversal not allowed in configuration file path")
 	}
 
 	// Resolve relative paths to absolute

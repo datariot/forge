@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -227,9 +228,9 @@ func (om *ObservabilityManager) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// Return first error if any occurred
+	// Return all errors if any occurred
 	if len(shutdownErrors) > 0 {
-		return shutdownErrors[0]
+		return errors.Join(shutdownErrors...)
 	}
 
 	return nil

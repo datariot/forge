@@ -15,22 +15,22 @@
 //
 // # Run the service
 //
-//   go run main.go
+//	go run main.go
 //
 // # Test the service
 //
-//   # Test basic HTTP calls
-//   curl http://localhost:8081/api/test/get
-//   curl -X POST http://localhost:8081/api/test/post
+//	# Test basic HTTP calls
+//	curl http://localhost:8081/api/test/get
+//	curl -X POST http://localhost:8081/api/test/post
 //
-//   # Test circuit breaker
-//   curl http://localhost:8081/api/test/unreliable
+//	# Test circuit breaker
+//	curl http://localhost:8081/api/test/unreliable
 //
-//   # Test with authentication
-//   curl -H "Authorization: Bearer <token>" http://localhost:8081/api/test/auth
+//	# Test with authentication
+//	curl -H "Authorization: Bearer <token>" http://localhost:8081/api/test/auth
 //
-//   # Check circuit breaker status
-//   curl http://localhost:8081/api/circuit-breaker/status
+//	# Check circuit breaker status
+//	curl http://localhost:8081/api/circuit-breaker/status
 package main
 
 import (
@@ -92,8 +92,8 @@ func (c *ServiceConfig) Validate() error {
 
 // HTTPClientService demonstrates HTTP client functionality.
 type HTTPClientService struct {
-	config       *ServiceConfig
-	httpBundle   *httpclient.Bundle
+	config        *ServiceConfig
+	httpBundle    *httpclient.Bundle
 	clientTimeout time.Duration
 }
 
@@ -170,9 +170,9 @@ func (s *HTTPClientService) handleTestGet(w http.ResponseWriter, r *http.Request
 	// Return the response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"method":  "GET",
-		"target":  s.config.TargetServiceURL + "/get",
+		"success":  true,
+		"method":   "GET",
+		"target":   s.config.TargetServiceURL + "/get",
 		"response": response,
 	})
 }
@@ -199,10 +199,10 @@ func (s *HTTPClientService) handleTestPost(w http.ResponseWriter, r *http.Reques
 	// Return the response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"method":  "POST",
-		"target":  s.config.TargetServiceURL + "/post",
-		"sent":    user,
+		"success":  true,
+		"method":   "POST",
+		"target":   s.config.TargetServiceURL + "/post",
+		"sent":     user,
 		"response": response,
 	})
 }
@@ -290,11 +290,11 @@ func (s *HTTPClientService) handleCircuitBreakerStatus(w http.ResponseWriter, r 
 	status := map[string]interface{}{
 		"state": state.String(),
 		"counts": map[string]interface{}{
-			"requests":             counts.Requests,
-			"total_successes":      counts.TotalSuccesses,
-			"total_failures":       counts.TotalFailures,
+			"requests":              counts.Requests,
+			"total_successes":       counts.TotalSuccesses,
+			"total_failures":        counts.TotalFailures,
 			"consecutive_successes": counts.ConsecutiveSuccesses,
-			"consecutive_failures": counts.ConsecutiveFailures,
+			"consecutive_failures":  counts.ConsecutiveFailures,
 		},
 		"timestamp": time.Now().UTC(),
 	}
@@ -308,12 +308,12 @@ func (s *HTTPClientService) handleClientStats(w http.ResponseWriter, r *http.Req
 	// This would show connection pool stats, request metrics, etc.
 	// For now, return basic information
 	stats := map[string]interface{}{
-		"service":        s.config.ServiceName,
-		"target_url":     s.config.TargetServiceURL,
-		"timeout":        s.clientTimeout.String(),
-		"max_retries":    s.config.MaxRetries,
-		"auth_enabled":   s.config.EnableAuth,
-		"timestamp":      time.Now().UTC(),
+		"service":      s.config.ServiceName,
+		"target_url":   s.config.TargetServiceURL,
+		"timeout":      s.clientTimeout.String(),
+		"max_retries":  s.config.MaxRetries,
+		"auth_enabled": s.config.EnableAuth,
+		"timestamp":    time.Now().UTC(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -369,11 +369,11 @@ func main() {
 		BaseURL: cfg.TargetServiceURL,
 		Timeout: timeout,
 		RetryConfig: httpclient.RetryConfig{
-			MaxRetries:             cfg.MaxRetries,
-			InitialInterval:        100 * time.Millisecond,
-			MaxInterval:           5 * time.Second,
-			Multiplier:            2.0,
-			RandomizationFactor:   0.1,
+			MaxRetries:          cfg.MaxRetries,
+			InitialInterval:     100 * time.Millisecond,
+			MaxInterval:         5 * time.Second,
+			Multiplier:          2.0,
+			RandomizationFactor: 0.1,
 		},
 		CircuitBreakerConfig: httpclient.CircuitBreakerConfig{
 			Name:        cfg.ServiceName + "-circuit-breaker",
@@ -387,7 +387,7 @@ func main() {
 		LogRequestBody:       true,
 		LogResponseBody:      true,
 		MaxLogBodySize:       1024,
-		UserAgent:           fmt.Sprintf("%s/1.0", cfg.ServiceName),
+		UserAgent:            fmt.Sprintf("%s/1.0", cfg.ServiceName),
 	}
 
 	httpBundle := httpclient.NewBundle(httpConfig)

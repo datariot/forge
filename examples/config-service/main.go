@@ -15,27 +15,27 @@
 //
 // # Run the service
 //
-//   # With config file
-//   echo 'service_name: "config-demo"
-//   database_url: "postgres://localhost:5432/demo"
-//   api_key: "secret-key-123"
-//   debug: true' > config.yaml
-//   go run main.go
+//	# With config file
+//	echo 'service_name: "config-demo"
+//	database_url: "postgres://localhost:5432/demo"
+//	api_key: "secret-key-123"
+//	debug: true' > config.yaml
+//	go run main.go
 //
-//   # With environment variables (overrides file)
-//   DATABASE_URL="postgres://prod:5432/proddb" \
-//   API_KEY="prod-secret-456" \
-//   DEBUG="false" \
-//   go run main.go
+//	# With environment variables (overrides file)
+//	DATABASE_URL="postgres://prod:5432/proddb" \
+//	API_KEY="prod-secret-456" \
+//	DEBUG="false" \
+//	go run main.go
 //
-//   # Hot reload testing
-//   # Edit config.yaml while service is running to see hot reload
+//	# Hot reload testing
+//	# Edit config.yaml while service is running to see hot reload
 //
 // # Test configuration endpoints
 //
-//   curl http://localhost:8081/api/config/info
-//   curl http://localhost:8081/api/config/reload
-//   curl http://localhost:8081/api/config/sources
+//	curl http://localhost:8081/api/config/info
+//	curl http://localhost:8081/api/config/reload
+//	curl http://localhost:8081/api/config/sources
 package main
 
 import (
@@ -237,9 +237,9 @@ func (s *ConfigService) handleConfigReload(w http.ResponseWriter, r *http.Reques
 	s.config = &newConfig
 
 	response := map[string]interface{}{
-		"reloaded":   true,
-		"timestamp":  time.Now().UTC(),
-		"load_info":  result,
+		"reloaded":  true,
+		"timestamp": time.Now().UTC(),
+		"load_info": result,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -2,11 +2,34 @@ package redis
 
 import (
 	"context"
+	stderrors "errors"
+	"fmt"
 	"testing"
 	"time"
 
+	goredis "github.com/redis/go-redis/v9"
+
 	"github.com/datariot/forge/errors"
 )
+
+// newLiveTestClient returns a Redis client connected to a local test instance,
+// skipping the test if no Redis server is reachable.
+func newLiveTestClient(t *testing.T) goredis.UniversalClient {
+	t.Helper()
+
+	client := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		t.Skipf("skipping: no Redis available at localhost:6379: %v", err)
+	}
+
+	t.Cleanup(func() { _ = client.Close() })
+	return client
+}
 
 // TestDefaultConfig tests default configuration values
 func TestDefaultConfig(t *testing.T) {
@@ -326,5 +349,63 @@ func TestConfig_Validate_EdgeCases(t *testing.T) {
 				t.Errorf("Expected no validation error but got: %v", err)
 			}
 		})
+	}
+}
+
+// --- CacheService.Get cache miss handling ---
+
+func TestCacheService_Get_CacheMiss(t *testing.T) {
+	client := newLiveTestClient(t)
+	cache := NewCacheService(client)
+
+	key := fmt.Sprintf("forge:test:cachemiss:%d", time.Now().UnixNano())
+	ctx := context.Background()
+
+	// Ensure the key does not exist.
+	client.Del(ctx, key)
+
+	var dest string
+	err := cache.Get(ctx, key, &dest)
+	if err == nil {
+		t.Fatal("expected error for missing cache key")
+	}
+	if !stderrors.Is(err, ErrCacheMiss) {
+		t.Errorf("expected errors.Is(err, ErrCacheMiss), got %v", err)
+	}
+}
+
+func TestCacheService_Get_Success(t *testing.T) {
+	client := newLiveTestClient(t)
+	cache := NewCacheService(client)
+
+	key := fmt.Sprintf("forge:test:cachehit:%d", time.Now().UnixNano())
+	ctx := context.Background()
+	defer client.Del(ctx, key)
+
+	if err := cache.Set(ctx, key, "hello", time.Minute); err != nil {
+		t.Fatalf("unexpected error setting cache value: %v", err)
+	}
+
+	var dest string
+	if err := cache.Get(ctx, key, &dest); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dest != "hello" {
+		t.Errorf("expected 'hello', got %q", dest)
+	}
+}
+
+// --- RedisHealthCheck.Readiness ---
+
+func TestRedisHealthCheck_Readiness_Success(t *testing.T) {
+	client := newLiveTestClient(t)
+
+	check := &RedisHealthCheck{
+		client:  client,
+		timeout: 2 * time.Second,
+	}
+
+	if err := check.Readiness(context.Background()); err != nil {
+		t.Errorf("expected Readiness to succeed, got: %v", err)
 	}
 }

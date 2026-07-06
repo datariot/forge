@@ -52,6 +52,7 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -226,15 +227,17 @@ type App struct {
 	startAt time.Time
 
 	// Core managers
-	logging          *LoggingManager
-	observability    *ObservabilityManager
-	healthRegistry   *forgeHealth.Registry
-	grpcHealthServer *health.Server
+	logging            *LoggingManager
+	observability      *ObservabilityManager
+	healthRegistry     *forgeHealth.Registry
+	grpcHealthServer   *health.Server
+	grpcHealthSyncStop chan struct{}
 
 	// Servers
-	grpcServer   *grpc.Server
-	httpServer   *http.Server
-	grpcListener net.Listener
+	grpcServer       *grpc.Server
+	httpServer       *http.Server
+	grpcListener     net.Listener
+	httpServerConfig *HTTPServerConfig
 
 	// Components and bundles
 	components []Component
@@ -408,6 +411,18 @@ func WithShutdownHook(hook ShutdownHook) AppOption {
 	}
 }
 
+// WithHTTPServerConfig sets a custom HTTP server configuration, overriding the
+// framework's default endpoint, CORS, and request logging settings.
+func WithHTTPServerConfig(cfg HTTPServerConfig) AppOption {
+	return func(app *App) error {
+		if err := cfg.Validate(); err != nil {
+			return fmt.Errorf("invalid HTTP server config: %w", err)
+		}
+		app.httpServerConfig = &cfg
+		return nil
+	}
+}
+
 // WithUnaryInterceptor adds a gRPC unary server interceptor.
 func WithUnaryInterceptor(interceptor grpc.UnaryServerInterceptor) AppOption {
 	return func(app *App) error {
@@ -483,13 +498,11 @@ func (a *App) Run(ctx context.Context) error {
 	signalCtx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
-	select {
-	case <-signalCtx.Done():
-		if ctx.Err() != nil {
-			logger.Info().Msg("Context cancelled")
-		} else {
-			logger.Info().Msg("Received shutdown signal")
-		}
+	<-signalCtx.Done()
+	if ctx.Err() != nil {
+		logger.Info().Msg("Context cancelled")
+	} else {
+		logger.Info().Msg("Received shutdown signal")
 	}
 
 	// Shutdown the application
@@ -539,6 +552,20 @@ func (a *App) Start(ctx context.Context) error {
 		logger.Debug().Int("hook_index", i).Msg("Startup hook executed successfully")
 	}
 
+	// Start the health registry's background check runner now that bundles
+	// and startup hooks have registered their checks, but before servers
+	// start accepting traffic. From this point on, /health probes are
+	// served from cached results instead of running checks live.
+	//
+	// This intentionally uses a background context rather than the Start
+	// context above: the latter is only meant to bound startup itself (as
+	// with startGRPCServer/startHTTPServer), not the runner's lifetime.
+	// The runner is stopped explicitly in Stop.
+	if err := a.healthRegistry.Start(context.Background()); err != nil {
+		return fmt.Errorf("failed to start health registry: %w", err)
+	}
+	logger.Info().Msg("Health registry background runner started")
+
 	// Create and start gRPC server only if registrars are configured
 	if len(a.registrars) > 0 {
 		if err := a.startGRPCServer(ctx); err != nil {
@@ -574,6 +601,13 @@ func (a *App) Start(ctx context.Context) error {
 		logger.Info().Msg("Service marked as ready")
 	}
 
+	// Keep the gRPC health service in sync with cached background check
+	// results for the process lifetime, not just the startup snapshot.
+	if a.grpcHealthServer != nil {
+		a.grpcHealthSyncStop = make(chan struct{})
+		go a.syncGRPCHealthLoop(a.grpcHealthSyncStop)
+	}
+
 	a.running = true
 	logger.Info().Msg("Service started successfully")
 
@@ -598,6 +632,18 @@ func (a *App) Stop(ctx context.Context) error {
 	// Mark service as not ready immediately
 	a.healthRegistry.SetReady(false)
 	a.updateGRPCHealthStatus()
+
+	if a.grpcHealthSyncStop != nil {
+		close(a.grpcHealthSyncStop)
+		a.grpcHealthSyncStop = nil
+	}
+
+	// Stop the health registry's background check runner. This waits for
+	// in-flight check goroutines to notice cancellation and exit, bounded
+	// by ctx, so shutdown doesn't hang on a wedged dependency check.
+	if err := a.healthRegistry.Stop(ctx); err != nil {
+		logger.Warn().Err(err).Msg("health registry runner did not stop cleanly")
+	}
 
 	// Create shutdown orchestrator with proper timeout
 	orchestrator := NewShutdownOrchestrator(a.config.ShutdownTimeout)
@@ -708,6 +754,17 @@ func (a *App) startGRPCServer(ctx context.Context) error {
 		opts = append(opts, grpc.ChainStreamInterceptor(a.streamInterceptors...))
 	}
 
+	// Apply configured message size and connection timeout limits
+	if a.config.GRPCMaxRecvMsgSize > 0 {
+		opts = append(opts, grpc.MaxRecvMsgSize(a.config.GRPCMaxRecvMsgSize))
+	}
+	if a.config.GRPCMaxSendMsgSize > 0 {
+		opts = append(opts, grpc.MaxSendMsgSize(a.config.GRPCMaxSendMsgSize))
+	}
+	if a.config.GRPCTimeout > 0 {
+		opts = append(opts, grpc.ConnectionTimeout(a.config.GRPCTimeout))
+	}
+
 	// Create gRPC server with interceptors
 	a.grpcServer = grpc.NewServer(opts...)
 
@@ -749,19 +806,17 @@ func (a *App) startGRPCServer(ctx context.Context) error {
 
 // startHTTPServer creates and starts the enhanced HTTP server.
 func (a *App) startHTTPServer(ctx context.Context) error {
-	// Create enhanced HTTP server configuration
-	httpConfig := HTTPServerConfig{
-		EnableCORS:           a.config.EnableCORS,
-		CORSOrigins:          a.config.CORSOrigins,
-		CORSMethods:          []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		CORSHeaders:          []string{"Content-Type", "Authorization"},
-		CORSCredentials:      false,
-		EnableMetrics:        a.config.EnableMetrics,
-		MetricsPath:          "/metrics",
-		HealthPathPrefix:     "/health",
-		EnableRequestLogging: a.config.EnableRequestLogging,
-		LogRequestBody:       false,
-		LogResponseBody:      false,
+	// Use the user-supplied HTTP server configuration if provided, otherwise
+	// fall back to defaults driven by the base config's toggles.
+	var httpConfig HTTPServerConfig
+	if a.httpServerConfig != nil {
+		httpConfig = *a.httpServerConfig
+	} else {
+		httpConfig = DefaultHTTPServerConfig()
+		httpConfig.EnableCORS = a.config.EnableCORS
+		httpConfig.CORSOrigins = a.config.CORSOrigins
+		httpConfig.EnableMetrics = a.config.EnableMetrics
+		httpConfig.EnableRequestLogging = a.config.EnableRequestLogging
 	}
 
 	// Build enhanced HTTP server
@@ -774,14 +829,25 @@ func (a *App) startHTTPServer(ctx context.Context) error {
 		}
 	}
 
-	a.httpServer = builder.Build()
+	httpServer, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("failed to build HTTP server: %w", err)
+	}
+	a.httpServer = httpServer
+
+	// Create listener synchronously so bind failures (e.g. port already in use)
+	// are reported to the caller instead of only being logged from the goroutine.
+	listener, err := net.Listen("tcp", a.config.HTTPAddr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", a.config.HTTPAddr, err)
+	}
 
 	// Start server in goroutine
 	go func() {
 		logger := a.logging.WithService(a.config.ServiceName, "http")
 		logger.Info().Str("addr", a.config.HTTPAddr).Msg("Starting HTTP server")
 
-		if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := a.httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error().Err(err).Msg("HTTP server error")
 		}
 	}()
@@ -798,9 +864,9 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status.HTTPStatus())
 
 	if data, err := status.JSON(); err == nil {
-		w.Write(data)
+		_, _ = w.Write(data)
 	} else {
-		w.Write([]byte(`{"status":"error","message":"failed to serialize health status"}`))
+		_, _ = w.Write([]byte(`{"status":"error","message":"failed to serialize health status"}`))
 	}
 }
 
@@ -813,9 +879,9 @@ func (a *App) handleReady(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status.HTTPStatus())
 
 	if data, err := status.JSON(); err == nil {
-		w.Write(data)
+		_, _ = w.Write(data)
 	} else {
-		w.Write([]byte(`{"status":"error","message":"failed to serialize readiness status"}`))
+		_, _ = w.Write([]byte(`{"status":"error","message":"failed to serialize readiness status"}`))
 	}
 }
 
@@ -828,9 +894,9 @@ func (a *App) handleLive(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status.HTTPStatus())
 
 	if data, err := status.JSON(); err == nil {
-		w.Write(data)
+		_, _ = w.Write(data)
 	} else {
-		w.Write([]byte(`{"status":"error","message":"failed to serialize liveness status"}`))
+		_, _ = w.Write([]byte(`{"status":"error","message":"failed to serialize liveness status"}`))
 	}
 }
 
@@ -860,6 +926,27 @@ func (a *App) updateGRPCHealthStatus() {
 			a.grpcHealthServer.SetServingStatus(checkName, grpc_health_v1.HealthCheckResponse_SERVING)
 		} else {
 			a.grpcHealthServer.SetServingStatus(checkName, grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+		}
+	}
+}
+
+// grpcHealthSyncInterval is how often the gRPC health service is refreshed
+// from the health registry's cached check results.
+const grpcHealthSyncInterval = 5 * time.Second
+
+// syncGRPCHealthLoop periodically mirrors health registry status into the
+// gRPC health service until the stop channel is closed. Reads are served
+// from the registry's cache, so each tick is a lock-and-copy, not live checks.
+func (a *App) syncGRPCHealthLoop(stop <-chan struct{}) {
+	ticker := time.NewTicker(grpcHealthSyncInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			a.updateGRPCHealthStatus()
 		}
 	}
 }

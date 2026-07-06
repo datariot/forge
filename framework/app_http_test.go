@@ -113,7 +113,7 @@ func TestApp_WithGRPCRegistrar(t *testing.T) {
 	if err := app.Start(ctx); err != nil {
 		t.Fatalf("Failed to start app: %v", err)
 	}
-	defer app.Stop(context.Background())
+	defer func() { _ = app.Stop(context.Background()) }()
 
 	// Verify registrar was called
 	if !registrarCalled {

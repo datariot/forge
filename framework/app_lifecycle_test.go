@@ -125,7 +125,9 @@ func TestApp_Lifecycle_ComponentStartOrder(t *testing.T) {
 	// Cleanup
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopCancel()
-	app.Stop(stopCtx)
+	if err := app.Stop(stopCtx); err != nil {
+		t.Errorf("Failed to stop app: %v", err)
+	}
 }
 
 // TestApp_Lifecycle_ComponentStopReverseOrder tests components stop in reverse order
@@ -237,7 +239,9 @@ func TestApp_Lifecycle_BundleInitialization(t *testing.T) {
 	// Cleanup
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopCancel()
-	app.Stop(stopCtx)
+	if err := app.Stop(stopCtx); err != nil {
+		t.Errorf("Failed to stop app: %v", err)
+	}
 
 	if !bundle.stopped {
 		t.Error("Bundle should be stopped after Stop()")
@@ -278,7 +282,9 @@ func TestApp_Lifecycle_StartupHooks(t *testing.T) {
 	// Cleanup
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopCancel()
-	app.Stop(stopCtx)
+	if err := app.Stop(stopCtx); err != nil {
+		t.Errorf("Failed to stop app: %v", err)
+	}
 }
 
 // TestApp_Lifecycle_ShutdownHooks tests shutdown hook execution
@@ -367,7 +373,9 @@ func TestApp_Lifecycle_HealthCheckRegistration(t *testing.T) {
 	// Cleanup
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopCancel()
-	app.Stop(stopCtx)
+	if err := app.Stop(stopCtx); err != nil {
+		t.Errorf("Failed to stop app: %v", err)
+	}
 }
 
 // TestApp_Lifecycle_MultipleStartCallsFail tests that calling Start() twice fails
@@ -399,7 +407,9 @@ func TestApp_Lifecycle_MultipleStartCallsFail(t *testing.T) {
 	// Cleanup
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopCancel()
-	app.Stop(stopCtx)
+	if err := app.Stop(stopCtx); err != nil {
+		t.Errorf("Failed to stop app: %v", err)
+	}
 }
 
 // TestApp_Lifecycle_Uptime tests uptime tracking

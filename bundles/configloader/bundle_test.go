@@ -127,10 +127,10 @@ func TestLoaderLoad_DefaultsApplied(t *testing.T) {
 	}
 
 	l := loaderWithConfig(Config{
-		ConfigPaths:    []string{"./nonexistent.yaml"},
+		ConfigPaths:       []string{"./nonexistent.yaml"},
 		RequireConfigFile: false,
-		ValidateOnLoad: false,
-		MaxFileSize:    1024 * 1024,
+		ValidateOnLoad:    false,
+		MaxFileSize:       1024 * 1024,
 	})
 
 	var cfg TestCfg
@@ -162,10 +162,10 @@ func TestLoaderLoad_EnvVarOverride(t *testing.T) {
 	t.Setenv("TEST_SERVICE_URL_CONFIGLOADER", "http://production:9090")
 
 	l := loaderWithConfig(Config{
-		ConfigPaths:    []string{"./nonexistent.yaml"},
+		ConfigPaths:       []string{"./nonexistent.yaml"},
 		RequireConfigFile: false,
-		ValidateOnLoad: false,
-		MaxFileSize:    1024 * 1024,
+		ValidateOnLoad:    false,
+		MaxFileSize:       1024 * 1024,
 	})
 
 	var cfg TestCfg
@@ -217,11 +217,11 @@ func TestLoaderLoad_FromYAMLFile(t *testing.T) {
 	}
 
 	l := loaderWithConfig(Config{
-		ConfigPaths:    []string{cfgPath},
+		ConfigPaths:       []string{cfgPath},
 		RequireConfigFile: true,
-		ValidateOnLoad: false,
-		MaxFileSize:    1024 * 1024,
-		AllowedPaths:   []string{dir},
+		ValidateOnLoad:    false,
+		MaxFileSize:       1024 * 1024,
+		AllowedPaths:      []string{dir},
 	})
 
 	var cfg TestCfg
@@ -257,11 +257,11 @@ func TestLoaderLoad_FromJSONFile(t *testing.T) {
 	}
 
 	l := loaderWithConfig(Config{
-		ConfigPaths:    []string{cfgPath},
+		ConfigPaths:       []string{cfgPath},
 		RequireConfigFile: true,
-		ValidateOnLoad: false,
-		MaxFileSize:    1024 * 1024,
-		AllowedPaths:   []string{dir},
+		ValidateOnLoad:    false,
+		MaxFileSize:       1024 * 1024,
+		AllowedPaths:      []string{dir},
 	})
 
 	var cfg TestCfg
@@ -281,10 +281,10 @@ func TestLoaderLoad_FromJSONFile(t *testing.T) {
 // TestLoaderLoad_RequireConfigFile_NotFound tests error when required file missing.
 func TestLoaderLoad_RequireConfigFile_NotFound(t *testing.T) {
 	l := loaderWithConfig(Config{
-		ConfigPaths:    []string{"./definitely_does_not_exist_xyz.yaml"},
+		ConfigPaths:       []string{"./definitely_does_not_exist_xyz.yaml"},
 		RequireConfigFile: true,
-		ValidateOnLoad: false,
-		MaxFileSize:    1024 * 1024,
+		ValidateOnLoad:    false,
+		MaxFileSize:       1024 * 1024,
 	})
 
 	var cfg struct{ Name string }
@@ -305,14 +305,16 @@ func TestLoaderLoad_FileTooLarge(t *testing.T) {
 	}
 
 	l := loaderWithConfig(Config{
-		ConfigPaths:    []string{cfgPath},
+		ConfigPaths:       []string{cfgPath},
 		RequireConfigFile: false,
-		ValidateOnLoad: false,
-		MaxFileSize:    5, // very small
-		AllowedPaths:   []string{dir},
+		ValidateOnLoad:    false,
+		MaxFileSize:       5, // very small
+		AllowedPaths:      []string{dir},
 	})
 
-	var cfg struct{ Key string `yaml:"key"` }
+	var cfg struct {
+		Key string `yaml:"key"`
+	}
 	_, err := l.Load(&cfg)
 	if err == nil {
 		t.Error("expected error for oversized config file")
@@ -448,12 +450,12 @@ func TestSetFieldValue(t *testing.T) {
 	l := loaderWithConfig(DefaultConfig())
 
 	type TestCfg struct {
-		StrField    string
-		IntField    int
-		BoolField   bool
-		FloatField  float64
-		UintField   uint
-		SliceField  []string
+		StrField   string
+		IntField   int
+		BoolField  bool
+		FloatField float64
+		UintField  uint
+		SliceField []string
 	}
 
 	cfg := TestCfg{}
@@ -545,10 +547,10 @@ func TestBundle_Close(t *testing.T) {
 // TestLoaderMustLoad_Panics tests that MustLoad panics on error.
 func TestLoaderMustLoad_Panics(t *testing.T) {
 	l := loaderWithConfig(Config{
-		ConfigPaths:    []string{"./no_such_file.yaml"},
+		ConfigPaths:       []string{"./no_such_file.yaml"},
 		RequireConfigFile: true,
-		ValidateOnLoad: false,
-		MaxFileSize:    1024,
+		ValidateOnLoad:    false,
+		MaxFileSize:       1024,
 	})
 
 	defer func() {
@@ -575,11 +577,11 @@ func TestLoaderReload(t *testing.T) {
 	}
 
 	l := loaderWithConfig(Config{
-		ConfigPaths:    []string{cfgPath},
+		ConfigPaths:       []string{cfgPath},
 		RequireConfigFile: false,
-		ValidateOnLoad: false,
-		MaxFileSize:    1024 * 1024,
-		AllowedPaths:   []string{dir},
+		ValidateOnLoad:    false,
+		MaxFileSize:       1024 * 1024,
+		AllowedPaths:      []string{dir},
 	})
 
 	var cfg TestCfg
@@ -663,12 +665,12 @@ func TestLoadFromFile_RelativePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("os.CreateTemp: %v", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 
 	if _, err := tmp.WriteString("key: value\n"); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	tmp.Close()
+	_ = tmp.Close()
 
 	// Chmod to 0644 to satisfy RequiredFileMode default.
 	if err := os.Chmod(tmp.Name(), 0o644); err != nil {

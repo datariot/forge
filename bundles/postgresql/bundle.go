@@ -159,7 +159,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 	defer cancel()
 
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return errors.ErrRepositoryUnavailable.WithMessage("failed to ping PostgreSQL database").WithCause(err)
 	}
 
@@ -192,7 +192,9 @@ func (b *Bundle) Stop(ctx context.Context) error {
 		return err
 	case <-ctx.Done():
 		// Force close after timeout
-		b.db.Close()
+		if closeErr := b.db.Close(); closeErr != nil {
+			return fmt.Errorf("database connection close timed out: %w (close error: %w)", ctx.Err(), closeErr)
+		}
 		return fmt.Errorf("database connection close timed out: %w", ctx.Err())
 	}
 }
@@ -218,7 +220,6 @@ func (b *Bundle) HealthChecks() []forgeHealth.Check {
 		},
 	}
 }
-
 
 // PostgreSQLHealthCheck implements health checking for PostgreSQL connections.
 type PostgreSQLHealthCheck struct {

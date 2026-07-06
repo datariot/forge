@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -66,7 +67,9 @@ func TestRegistry_Unregister(t *testing.T) {
 	check := NewAlwaysHealthyCheck("test-check")
 	config := DefaultCheckConfig("test-check")
 
-	registry.Register(check, config)
+	if err := registry.Register(check, config); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 	registry.Unregister("test-check")
 
 	// Should be able to re-register after unregister
@@ -99,7 +102,9 @@ func TestRegistry_CheckLiveness(t *testing.T) {
 	registry := NewRegistry(nil)
 
 	healthyCheck := NewAlwaysHealthyCheck("healthy-check")
-	registry.Register(healthyCheck, DefaultCheckConfig("healthy-check"))
+	if err := registry.Register(healthyCheck, DefaultCheckConfig("healthy-check")); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckLiveness(ctx)
@@ -118,14 +123,16 @@ func TestRegistry_CheckLiveness_FailingCheck(t *testing.T) {
 	registry := NewRegistry(nil)
 
 	failingCheck := &testCheck{
-		name:          "failing-check",
-		livenessErr:   errors.New("check failed"),
-		readinessErr:  errors.New("check failed"),
+		name:         "failing-check",
+		livenessErr:  errors.New("check failed"),
+		readinessErr: errors.New("check failed"),
 	}
 	config := DefaultCheckConfig("failing-check")
 	config.Required = true
 
-	registry.Register(failingCheck, config)
+	if err := registry.Register(failingCheck, config); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckLiveness(ctx)
@@ -151,7 +158,9 @@ func TestRegistry_CheckLiveness_OptionalFailingCheck(t *testing.T) {
 	config := DefaultCheckConfig("optional-failing")
 	config.Required = false
 
-	registry.Register(failingCheck, config)
+	if err := registry.Register(failingCheck, config); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckLiveness(ctx)
@@ -175,7 +184,9 @@ func TestRegistry_CheckReadiness(t *testing.T) {
 	registry.SetReady(true)
 
 	healthyCheck := NewAlwaysHealthyCheck("healthy-check")
-	registry.Register(healthyCheck, DefaultCheckConfig("healthy-check"))
+	if err := registry.Register(healthyCheck, DefaultCheckConfig("healthy-check")); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckReadiness(ctx)
@@ -195,7 +206,9 @@ func TestRegistry_CheckReadiness_NotMarkedReady(t *testing.T) {
 	// Don't call SetReady(true)
 
 	healthyCheck := NewAlwaysHealthyCheck("healthy-check")
-	registry.Register(healthyCheck, DefaultCheckConfig("healthy-check"))
+	if err := registry.Register(healthyCheck, DefaultCheckConfig("healthy-check")); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckReadiness(ctx)
@@ -215,7 +228,9 @@ func TestRegistry_CheckHealth(t *testing.T) {
 	registry.SetReady(true)
 
 	healthyCheck := NewAlwaysHealthyCheck("healthy-check")
-	registry.Register(healthyCheck, DefaultCheckConfig("healthy-check"))
+	if err := registry.Register(healthyCheck, DefaultCheckConfig("healthy-check")); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckHealth(ctx)
@@ -233,10 +248,12 @@ func TestRegistry_ConcurrentChecks(t *testing.T) {
 	// Add multiple checks with delays
 	for i := 0; i < 5; i++ {
 		check := &testCheck{
-			name: "slow-check-" + string(rune('A'+i)),
+			name:  "slow-check-" + string(rune('A'+i)),
 			delay: 100 * time.Millisecond,
 		}
-		registry.Register(check, DefaultCheckConfig(check.name))
+		if err := registry.Register(check, DefaultCheckConfig(check.name)); err != nil {
+			t.Fatalf("Failed to register check: %v", err)
+		}
 	}
 
 	ctx := context.Background()
@@ -270,7 +287,9 @@ func TestRegistry_CheckTimeout(t *testing.T) {
 	config := DefaultCheckConfig("very-slow-check")
 	config.Required = true
 
-	registry.Register(slowCheck, config)
+	if err := registry.Register(slowCheck, config); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	// Use context timeout to control check duration
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -295,10 +314,12 @@ func TestRegistry_MixedChecks(t *testing.T) {
 	registry.SetReady(true)
 
 	// Required healthy check
-	registry.Register(
+	if err := registry.Register(
 		NewAlwaysHealthyCheck("required-healthy"),
 		DefaultCheckConfig("required-healthy"),
-	)
+	); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	// Optional failing check
 	failingCheck := &testCheck{
@@ -308,7 +329,9 @@ func TestRegistry_MixedChecks(t *testing.T) {
 	}
 	failingConfig := DefaultCheckConfig("optional-failing")
 	failingConfig.Required = false
-	registry.Register(failingCheck, failingConfig)
+	if err := registry.Register(failingCheck, failingConfig); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckLiveness(ctx)
@@ -434,4 +457,292 @@ func (c *testCheck) Readiness(ctx context.Context) error {
 		}
 	}
 	return c.readinessErr
+}
+
+// blockingCheck blocks Liveness/Readiness on ctx.Done() (never returning on
+// its own), letting a test drive it via context cancellation only. onCall,
+// if set, is invoked (once, safely from concurrent probes) the first time
+// either method is entered.
+type blockingCheck struct {
+	name string
+
+	once   sync.Once
+	onCall func()
+}
+
+func (c *blockingCheck) Name() string { return c.name }
+
+func (c *blockingCheck) block(ctx context.Context) error {
+	if c.onCall != nil {
+		c.once.Do(c.onCall)
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (c *blockingCheck) Liveness(ctx context.Context) error  { return c.block(ctx) }
+func (c *blockingCheck) Readiness(ctx context.Context) error { return c.block(ctx) }
+
+// gatedCheck succeeds immediately for its first roundSize invocations (one
+// full round's worth of Liveness+Readiness calls), then blocks on ctx.Done()
+// for every invocation after that. It's used to simulate a dependency that
+// is healthy on the first background round and then hangs on the next one.
+type gatedCheck struct {
+	name      string
+	roundSize int
+
+	mu    sync.Mutex
+	calls int
+
+	firstRoundDone chan struct{}
+	once           sync.Once
+}
+
+func newGatedCheck(name string) *gatedCheck {
+	return &gatedCheck{
+		name:           name,
+		roundSize:      2, // liveness + readiness
+		firstRoundDone: make(chan struct{}),
+	}
+}
+
+func (c *gatedCheck) Name() string { return c.name }
+
+func (c *gatedCheck) probe(ctx context.Context) error {
+	c.mu.Lock()
+	c.calls++
+	n := c.calls
+	c.mu.Unlock()
+
+	if n <= c.roundSize {
+		if n == c.roundSize {
+			c.once.Do(func() { close(c.firstRoundDone) })
+		}
+		return nil
+	}
+
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (c *gatedCheck) Liveness(ctx context.Context) error  { return c.probe(ctx) }
+func (c *gatedCheck) Readiness(ctx context.Context) error { return c.probe(ctx) }
+
+// waitClosed waits for ch to be closed, failing the test if it isn't within d.
+func waitClosed(t *testing.T, ch chan struct{}, d time.Duration, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(d):
+		t.Fatalf("timed out waiting for %s", what)
+	}
+}
+
+// TestRegistry_Runner_CachesResultsAndServesStaleReads verifies that once
+// Start has been called, a probe read is served from the background
+// runner's cache: it returns near-instantly and reflects the last
+// completed round, even while a new round is in flight (e.g. blocked on a
+// hanging dependency).
+func TestRegistry_Runner_CachesResultsAndServesStaleReads(t *testing.T) {
+	registry := NewRegistry(nil)
+	registry.SetReady(true)
+
+	check := newGatedCheck("dep")
+	cfg := DefaultCheckConfig("dep")
+	cfg.Interval = 10 * time.Millisecond
+	cfg.InitialDelay = 0
+	cfg.Timeout = time.Second
+	if err := registry.Register(check, cfg); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := registry.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopCancel()
+		if err := registry.Stop(stopCtx); err != nil {
+			t.Errorf("Stop returned error: %v", err)
+		}
+	})
+
+	// Wait for the first round to complete so the cache is populated.
+	waitClosed(t, check.firstRoundDone, 2*time.Second, "first background round")
+
+	// The second round is now in flight and will block forever (until
+	// ctx/Stop cancellation). A probe read must not wait for it - it
+	// should return the still-healthy result from the first round.
+	done := make(chan HealthStatus, 1)
+	go func() { done <- registry.CheckReadiness(context.Background()) }()
+
+	select {
+	case status := <-done:
+		if status.Status != StatusHealthy {
+			t.Errorf("expected cached status healthy, got %s (details: %+v)", status.Status, status.Details)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("CheckReadiness blocked on the in-flight (hanging) check instead of serving the cache")
+	}
+}
+
+// TestRegistry_Runner_PreFirstRoundReadinessNotReady verifies that a probe
+// hitting the registry before the background runner's first round has
+// completed reports not-ready, rather than optimistically healthy.
+func TestRegistry_Runner_PreFirstRoundReadinessNotReady(t *testing.T) {
+	registry := NewRegistry(nil)
+	registry.SetReady(true)
+
+	check := &blockingCheck{name: "slow-start"}
+	cfg := DefaultCheckConfig("slow-start")
+	cfg.InitialDelay = time.Hour // effectively "never during this test"
+	if err := registry.Register(check, cfg); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := registry.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopCancel()
+		registry.Stop(stopCtx) //nolint:errcheck
+	})
+
+	// InitialDelay means the runner goroutine hasn't run a round yet, so
+	// this must be answered from the "pending" synthetic result, not by
+	// invoking the (permanently blocking) check.
+	status := registry.CheckReadiness(context.Background())
+	if status.Status != StatusUnhealthy {
+		t.Errorf("expected pending check to report unhealthy/not-ready, got %s", status.Status)
+	}
+	if result, ok := status.Details["slow-start"]; ok {
+		if result.Status != StatusUnknown {
+			t.Errorf("expected pending check detail status %s, got %s", StatusUnknown, result.Status)
+		}
+	} else {
+		t.Error("expected a details entry for the pending check")
+	}
+}
+
+// TestRegistry_Runner_LateRegisteredCheckGetsScheduled verifies that a
+// check registered after Start still gets its own background runner.
+func TestRegistry_Runner_LateRegisteredCheckGetsScheduled(t *testing.T) {
+	registry := NewRegistry(nil)
+	registry.SetReady(true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := registry.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopCancel()
+		if err := registry.Stop(stopCtx); err != nil {
+			t.Errorf("Stop returned error: %v", err)
+		}
+	})
+
+	check := newGatedCheck("late")
+	cfg := DefaultCheckConfig("late")
+	cfg.Interval = 10 * time.Millisecond
+	if err := registry.Register(check, cfg); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	waitClosed(t, check.firstRoundDone, 2*time.Second, "late-registered check's first background round")
+
+	status := registry.CheckLiveness(context.Background())
+	if status.Status != StatusHealthy {
+		t.Errorf("expected late-registered check to report healthy after its round, got %s", status.Status)
+	}
+}
+
+// TestRegistry_Stop_NoGoroutineLeak verifies that Stop terminates all
+// runner goroutines - including one currently blocked inside a check -
+// without leaking. The assertion is that Stop itself returns (its
+// implementation waits on a done channel derived from the runner
+// goroutines' WaitGroup), not a fixed sleep.
+func TestRegistry_Stop_NoGoroutineLeak(t *testing.T) {
+	registry := NewRegistry(nil)
+
+	started := make(chan struct{})
+	check := &blockingCheck{onCall: func() { close(started) }, name: "blocking"}
+	cfg := DefaultCheckConfig("blocking")
+	if err := registry.Register(check, cfg); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	if err := registry.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	waitClosed(t, started, 2*time.Second, "background runner to invoke the blocking check")
+
+	stopDone := make(chan error, 1)
+	go func() { stopDone <- registry.Stop(context.Background()) }()
+
+	select {
+	case err := <-stopDone:
+		if err != nil {
+			t.Errorf("Stop returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not return in time - a runner goroutine leaked")
+	}
+}
+
+// TestRegistry_Fallback_NotStarted verifies the registry still computes
+// live when Start has never been called, preserving the pre-existing API
+// contract for unit tests / direct library use.
+func TestRegistry_Fallback_NotStarted(t *testing.T) {
+	registry := NewRegistry(nil)
+	registry.SetReady(true)
+
+	calls := 0
+	var mu sync.Mutex
+	check := &testCheck{name: "fallback"}
+	// Wrap to count invocations without changing testCheck's shape.
+	counting := &countingCheck{testCheck: check, onCall: func() {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+	}}
+
+	if err := registry.Register(counting, DefaultCheckConfig("fallback")); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		status := registry.CheckLiveness(ctx)
+		if status.Status != StatusHealthy {
+			t.Fatalf("expected healthy status, got %s", status.Status)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 3 {
+		t.Errorf("expected the fallback (non-started) path to invoke the check live on every call (3), got %d", calls)
+	}
+}
+
+// countingCheck wraps a testCheck and calls onCall on every Liveness call,
+// used to distinguish "computed live" from "served from cache".
+type countingCheck struct {
+	*testCheck
+	onCall func()
+}
+
+func (c *countingCheck) Liveness(ctx context.Context) error {
+	if c.onCall != nil {
+		c.onCall()
+	}
+	return c.testCheck.Liveness(ctx)
 }

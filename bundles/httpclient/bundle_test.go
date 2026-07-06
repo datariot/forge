@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -106,7 +107,9 @@ func TestBundle_Stop(t *testing.T) {
 	bundle := NewBundle(cfg)
 
 	// Initialize first
-	bundle.Initialize(nil)
+	if err := bundle.Initialize(nil); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
 
 	ctx := context.Background()
 	if err := bundle.Stop(ctx); err != nil {
@@ -438,7 +441,7 @@ func TestClient_Get_Success(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"name":"test"}`))
+		_, _ = w.Write([]byte(`{"name":"test"}`))
 	}))
 	defer server.Close()
 
@@ -456,7 +459,7 @@ func TestClient_Get_Success(t *testing.T) {
 func TestClient_Get_NotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":"not found"}`))
+		_, _ = w.Write([]byte(`{"error":"not found"}`))
 	}))
 	defer server.Close()
 
@@ -476,7 +479,7 @@ func TestClient_Post_Success(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{"id":"123"}`))
+		_, _ = w.Write([]byte(`{"id":"123"}`))
 	}))
 	defer server.Close()
 
@@ -524,7 +527,7 @@ func TestClient_RawRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
@@ -568,7 +571,7 @@ func TestClient_Put_Success(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"updated":true}`))
+		_, _ = w.Write([]byte(`{"updated":true}`))
 	}))
 	defer server.Close()
 
@@ -584,5 +587,106 @@ func TestClient_Put_Success(t *testing.T) {
 	}
 	if !resp.Updated {
 		t.Error("expected Updated=true")
+	}
+}
+
+// --- executeWithRetry error handling ---
+
+func TestExecuteWithRetry_MaxRetriesExceeded_PreservesCause(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	cfg := DefaultConfig()
+	cfg.BaseURL = server.URL
+	cfg.RetryConfig.MaxRetries = 2
+	cfg.RetryConfig.InitialInterval = 5 * time.Millisecond
+	cfg.RetryConfig.MaxInterval = 20 * time.Millisecond
+	cfg.CircuitBreakerConfig.Name = "test-retry-exhausted"
+
+	b := NewBundle(cfg)
+	if err := b.Initialize(nil); err != nil {
+		t.Fatalf("failed to initialize bundle: %v", err)
+	}
+
+	err := b.Client().Get(context.Background(), "/api/test", nil)
+	if err == nil {
+		t.Fatal("expected error after exhausting retries")
+	}
+	if !errors.Is(err, ErrMaxRetriesExceeded) {
+		t.Errorf("expected errors.Is(err, ErrMaxRetriesExceeded), got %v", err)
+	}
+
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("expected underlying HTTPError to be preserved, got %v", err)
+	}
+	if httpErr.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("expected status 503, got %d", httpErr.StatusCode)
+	}
+}
+
+func TestExecuteWithRetry_ContextDeadlineExceeded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cfg := DefaultConfig()
+	cfg.BaseURL = server.URL
+	cfg.RetryConfig.MaxRetries = 3
+	cfg.RetryConfig.InitialInterval = 5 * time.Millisecond
+	cfg.RetryConfig.MaxInterval = 20 * time.Millisecond
+	cfg.CircuitBreakerConfig.Name = "test-ctx-deadline"
+
+	b := NewBundle(cfg)
+	if err := b.Initialize(nil); err != nil {
+		t.Fatalf("failed to initialize bundle: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := b.Client().Get(ctx, "/api/slow", nil)
+	if err == nil {
+		t.Fatal("expected error for context deadline exceeded")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected errors.Is(err, context.DeadlineExceeded), got %v", err)
+	}
+	if errors.Is(err, ErrMaxRetriesExceeded) {
+		t.Error("context deadline exceeded should not be reported as max retries exceeded")
+	}
+}
+
+func TestRequest_CircuitBreakerOpen(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := DefaultConfig()
+	cfg.BaseURL = server.URL
+	cfg.RetryConfig.MaxRetries = 0
+	cfg.CircuitBreakerConfig.Name = "test-cb-open"
+	cfg.CircuitBreakerConfig.MaxRequests = 1
+	cfg.CircuitBreakerConfig.Interval = time.Minute
+	cfg.CircuitBreakerConfig.Timeout = time.Minute
+
+	b := NewBundle(cfg)
+	if err := b.Initialize(nil); err != nil {
+		t.Fatalf("failed to initialize bundle: %v", err)
+	}
+
+	// Default ReadyToTrip opens the breaker after 5 consecutive failures.
+	for i := 0; i < 5; i++ {
+		_ = b.Client().Get(context.Background(), "/api/test", nil)
+	}
+
+	err := b.Client().Get(context.Background(), "/api/test", nil)
+	if !errors.Is(err, ErrCircuitBreakerOpen) {
+		t.Errorf("expected errors.Is(err, ErrCircuitBreakerOpen), got %v", err)
 	}
 }

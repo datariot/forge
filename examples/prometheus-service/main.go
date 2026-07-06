@@ -9,26 +9,26 @@
 //
 // # Run the service
 //
-//   go run main.go
+//	go run main.go
 //
 // # View metrics
 //
-//   # Prometheus metrics endpoint
-//   curl http://localhost:8081/metrics
+//	# Prometheus metrics endpoint
+//	curl http://localhost:8081/metrics
 //
-//   # Test endpoints to generate metrics
-//   curl http://localhost:8081/api/users
-//   curl -X POST http://localhost:8081/api/users -d '{"name":"John","email":"john@example.com"}'
-//   curl http://localhost:8081/api/simulate/error
-//   curl http://localhost:8081/api/simulate/slow
+//	# Test endpoints to generate metrics
+//	curl http://localhost:8081/api/users
+//	curl -X POST http://localhost:8081/api/users -d '{"name":"John","email":"john@example.com"}'
+//	curl http://localhost:8081/api/simulate/error
+//	curl http://localhost:8081/api/simulate/slow
 //
-//   # Health checks (generates health metrics)
-//   curl http://localhost:8081/health
+//	# Health checks (generates health metrics)
+//	curl http://localhost:8081/health
 //
 // # Grafana Dashboard
 //
-//   Import the dashboard from bundles/prometheus/grafana-dashboard.json
-//   Update the namespace variable to match your service name
+//	Import the dashboard from bundles/prometheus/grafana-dashboard.json
+//	Update the namespace variable to match your service name
 package main
 
 import (
@@ -82,7 +82,7 @@ func (c *ServiceConfig) Validate() error {
 
 // MetricsService demonstrates Prometheus metrics functionality.
 type MetricsService struct {
-	config         *ServiceConfig
+	config           *ServiceConfig
 	prometheusBundle *forgePrometheus.Bundle
 
 	// Custom metrics
@@ -201,9 +201,9 @@ func (s *MetricsService) setupHTTPEndpoints(mux *http.ServeMux) {
 
 // User represents a user for demonstration.
 type User struct {
-	ID    string    `json:"id"`
-	Name  string    `json:"name"`
-	Email string    `json:"email"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -285,8 +285,8 @@ func (s *MetricsService) handleCreateUser(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"user":    user,
-		"created": true,
+		"user":      user,
+		"created":   true,
 		"timestamp": time.Now().UTC(),
 	})
 }
@@ -327,9 +327,9 @@ func (s *MetricsService) handleSimulateSlow(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":  "Slow operation completed",
-		"delay":    delay.String(),
-		"duration": duration.String(),
+		"message":   "Slow operation completed",
+		"delay":     delay.String(),
+		"duration":  duration.String(),
 		"timestamp": time.Now().UTC(),
 	})
 }
@@ -337,9 +337,9 @@ func (s *MetricsService) handleSimulateSlow(w http.ResponseWriter, r *http.Reque
 // handleMetricsInfo provides information about available metrics.
 func (s *MetricsService) handleMetricsInfo(w http.ResponseWriter, r *http.Request) {
 	info := map[string]interface{}{
-		"service":   s.config.ServiceName,
-		"namespace": s.config.MetricsNamespace,
-		"subsystem": s.config.MetricsSubsystem,
+		"service":          s.config.ServiceName,
+		"namespace":        s.config.MetricsNamespace,
+		"subsystem":        s.config.MetricsSubsystem,
 		"metrics_endpoint": "/metrics",
 		"available_metrics": []string{
 			"http_requests_total",
@@ -360,7 +360,7 @@ func (s *MetricsService) handleMetricsInfo(w http.ResponseWriter, r *http.Reques
 			"cache_hit_ratio",
 		},
 		"grafana_dashboard": "/bundles/prometheus/grafana-dashboard.json",
-		"timestamp": time.Now().UTC(),
+		"timestamp":         time.Now().UTC(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -393,8 +393,8 @@ func (s *MetricsService) handleUpdateMetrics(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"updated": true,
-		"message": "Metrics updated with random values",
+		"updated":   true,
+		"message":   "Metrics updated with random values",
 		"timestamp": time.Now().UTC(),
 	})
 }

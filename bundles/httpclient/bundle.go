@@ -69,6 +69,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net"
@@ -112,7 +113,7 @@ func NewStaticCredentialProvider(apiKey, jwtToken string) *StaticCredentialProvi
 // GetAPIKey returns the static API key.
 func (p *StaticCredentialProvider) GetAPIKey(ctx context.Context) (string, error) {
 	if p.apiKey == "" {
-		return "", fmt.Errorf("no API key configured")
+		return "", stderrors.New("no API key configured")
 	}
 	return p.apiKey, nil
 }
@@ -120,7 +121,7 @@ func (p *StaticCredentialProvider) GetAPIKey(ctx context.Context) (string, error
 // GetJWTToken returns the static JWT token.
 func (p *StaticCredentialProvider) GetJWTToken(ctx context.Context) (string, error) {
 	if p.jwtToken == "" {
-		return "", fmt.Errorf("no JWT token configured")
+		return "", stderrors.New("no JWT token configured")
 	}
 	return p.jwtToken, nil
 }
@@ -134,10 +135,10 @@ type Config struct {
 	Timeout time.Duration
 
 	// Transport configuration
-	MaxIdleConns        int           // Maximum idle connections (default: 100)
-	MaxIdleConnsPerHost int           // Maximum idle connections per host (default: 10)
-	IdleConnTimeout     time.Duration // Idle connection timeout (default: 90 seconds)
-	TLSHandshakeTimeout time.Duration // TLS handshake timeout (default: 10 seconds)
+	MaxIdleConns          int           // Maximum idle connections (default: 100)
+	MaxIdleConnsPerHost   int           // Maximum idle connections per host (default: 10)
+	IdleConnTimeout       time.Duration // Idle connection timeout (default: 90 seconds)
+	TLSHandshakeTimeout   time.Duration // TLS handshake timeout (default: 10 seconds)
 	ExpectContinueTimeout time.Duration // Expect 100-continue timeout (default: 1 second)
 
 	// TLS configuration
@@ -157,11 +158,11 @@ type Config struct {
 	CircuitBreakerConfig CircuitBreakerConfig
 
 	// Logging and observability
-	EnableRequestLogging  bool // Enable request/response logging
-	EnableMetrics         bool // Enable request metrics collection
-	LogRequestBody        bool // Log request bodies (be careful with sensitive data)
-	LogResponseBody       bool // Log response bodies (be careful with sensitive data)
-	MaxLogBodySize        int  // Maximum body size to log (default: 1024 bytes)
+	EnableRequestLogging bool // Enable request/response logging
+	EnableMetrics        bool // Enable request metrics collection
+	LogRequestBody       bool // Log request bodies (be careful with sensitive data)
+	LogResponseBody      bool // Log response bodies (be careful with sensitive data)
+	MaxLogBodySize       int  // Maximum body size to log (default: 1024 bytes)
 
 	// User agent
 	UserAgent string // User agent string (default: "Forge-HTTP-Client/1.0")
@@ -169,44 +170,44 @@ type Config struct {
 
 // RetryConfig contains retry policy configuration.
 type RetryConfig struct {
-	MaxRetries      int           // Maximum number of retries (default: 3)
-	InitialInterval time.Duration // Initial retry interval (default: 100ms)
-	MaxInterval     time.Duration // Maximum retry interval (default: 5s)
-	Multiplier      float64       // Backoff multiplier (default: 2.0)
-	RandomizationFactor float64   // Randomization factor (default: 0.1)
+	MaxRetries          int           // Maximum number of retries (default: 3)
+	InitialInterval     time.Duration // Initial retry interval (default: 100ms)
+	MaxInterval         time.Duration // Maximum retry interval (default: 5s)
+	Multiplier          float64       // Backoff multiplier (default: 2.0)
+	RandomizationFactor float64       // Randomization factor (default: 0.1)
 }
 
 // CircuitBreakerConfig contains circuit breaker configuration.
 type CircuitBreakerConfig struct {
-	Name          string        // Circuit breaker name for metrics
-	MaxRequests   uint32        // Max requests in half-open state (default: 3)
-	Interval      time.Duration // Interval to clear failure counts (default: 60s)
-	Timeout       time.Duration // Timeout in open state (default: 30s)
-	ReadyToTrip   func(counts gobreaker.Counts) bool // Custom trip function
+	Name        string                             // Circuit breaker name for metrics
+	MaxRequests uint32                             // Max requests in half-open state (default: 3)
+	Interval    time.Duration                      // Interval to clear failure counts (default: 60s)
+	Timeout     time.Duration                      // Timeout in open state (default: 30s)
+	ReadyToTrip func(counts gobreaker.Counts) bool // Custom trip function
 }
 
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Timeout:                 30 * time.Second,
-		MaxIdleConns:           100,
-		MaxIdleConnsPerHost:    10,
-		IdleConnTimeout:        90 * time.Second,
-		TLSHandshakeTimeout:    10 * time.Second,
-		ExpectContinueTimeout:  1 * time.Second,
-		APIKeyHeader:           "X-API-Key",
-		EnableRequestLogging:   true,
-		EnableMetrics:          true,
-		LogRequestBody:         false,
-		LogResponseBody:        false,
-		MaxLogBodySize:         1024,
-		UserAgent:              "Forge-HTTP-Client/1.0",
+		Timeout:               30 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		APIKeyHeader:          "X-API-Key",
+		EnableRequestLogging:  true,
+		EnableMetrics:         true,
+		LogRequestBody:        false,
+		LogResponseBody:       false,
+		MaxLogBodySize:        1024,
+		UserAgent:             "Forge-HTTP-Client/1.0",
 		RetryConfig: RetryConfig{
-			MaxRetries:             3,
-			InitialInterval:        100 * time.Millisecond,
-			MaxInterval:           5 * time.Second,
-			Multiplier:            2.0,
-			RandomizationFactor:   0.1,
+			MaxRetries:          3,
+			InitialInterval:     100 * time.Millisecond,
+			MaxInterval:         5 * time.Second,
+			Multiplier:          2.0,
+			RandomizationFactor: 0.1,
 		},
 		CircuitBreakerConfig: CircuitBreakerConfig{
 			MaxRequests: 3,
@@ -264,7 +265,7 @@ func (c *Config) Validate() error {
 
 	// Validate circuit breaker configuration
 	if c.CircuitBreakerConfig.MaxRequests == 0 {
-		return fmt.Errorf("circuit breaker max_requests must be positive")
+		return stderrors.New("circuit breaker max_requests must be positive")
 	}
 	if c.CircuitBreakerConfig.Interval <= 0 {
 		return fmt.Errorf("circuit breaker interval must be positive, got %v", c.CircuitBreakerConfig.Interval)
@@ -333,8 +334,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 
 	// Enforce secure TLS configuration
 	tlsConfig.MinVersion = tls.VersionTLS12 // Require TLS 1.2 minimum
-	tlsConfig.PreferServerCipherSuites = true
-	tlsConfig.InsecureSkipVerify = false // Never skip certificate verification
+	tlsConfig.InsecureSkipVerify = false    // Never skip certificate verification
 
 	// Set secure cipher suites
 	tlsConfig.CipherSuites = []uint16{
@@ -473,8 +473,8 @@ func (e *HTTPError) IsRetryableError() bool {
 
 // Common errors
 var (
-	ErrCircuitBreakerOpen = fmt.Errorf("circuit breaker is open")
-	ErrMaxRetriesExceeded = fmt.Errorf("maximum retries exceeded")
+	ErrCircuitBreakerOpen = stderrors.New("circuit breaker is open")
+	ErrMaxRetriesExceeded = stderrors.New("maximum retries exceeded")
 )
 
 // Get performs a GET request and unmarshals the response into dest.
@@ -512,7 +512,7 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 
 	if err != nil {
 		// Check if circuit breaker is open
-		if err == gobreaker.ErrOpenState {
+		if stderrors.Is(err, gobreaker.ErrOpenState) {
 			return ErrCircuitBreakerOpen
 		}
 		return err
@@ -531,9 +531,14 @@ func (c *Client) executeWithRetry(ctx context.Context, method, url string, body 
 	b := backoff.WithContext(c.backoffFactory(), ctx)
 
 	// Retry with backoff
-	err := backoff.Retry(operation, b)
-	if err != nil {
-		return ErrMaxRetriesExceeded
+	lastErr := backoff.Retry(operation, b)
+	if lastErr != nil {
+		// Distinguish context cancellation/deadline from genuine retry exhaustion
+		// so callers can detect cancellation instead of misreading it as exhaustion.
+		if stderrors.Is(lastErr, context.Canceled) || stderrors.Is(lastErr, context.DeadlineExceeded) {
+			return fmt.Errorf("request context ended: %w", lastErr)
+		}
+		return fmt.Errorf("%w: %w", ErrMaxRetriesExceeded, lastErr)
 	}
 
 	return nil
@@ -591,12 +596,13 @@ func (c *Client) executeRequest(ctx context.Context, method, url string, body in
 		}
 
 		// Check if error is retryable
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		var netErr net.Error
+		if stderrors.As(err, &netErr) && netErr.Timeout() {
 			return err // Retryable timeout error
 		}
 		return backoff.Permanent(err) // Non-retryable error
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
@@ -778,13 +784,13 @@ func (c *Client) addAuthHeaders(ctx context.Context, req *http.Request) error {
 // validateJWTToken performs basic JWT token validation.
 func (c *Client) validateJWTToken(token string) error {
 	if token == "" {
-		return fmt.Errorf("token cannot be empty")
+		return stderrors.New("token cannot be empty")
 	}
 
 	// Basic JWT format validation (header.payload.signature)
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return fmt.Errorf("invalid JWT token format")
+		return stderrors.New("invalid JWT token format")
 	}
 
 	// Additional validation would be performed by JWT bundle
@@ -843,7 +849,7 @@ func (c *Client) RawRequest(ctx context.Context, method, url string, headers map
 	})
 
 	if err != nil {
-		if err == gobreaker.ErrOpenState {
+		if stderrors.Is(err, gobreaker.ErrOpenState) {
 			return nil, ErrCircuitBreakerOpen
 		}
 		return nil, err
@@ -855,7 +861,7 @@ func (c *Client) RawRequest(ctx context.Context, method, url string, headers map
 // HealthCheck performs health checks for the HTTP client.
 func (c *Client) HealthCheck(ctx context.Context, healthURL string) error {
 	if healthURL == "" {
-		return fmt.Errorf("health check URL not configured")
+		return stderrors.New("health check URL not configured")
 	}
 
 	// Perform a simple GET request to health endpoint
@@ -866,7 +872,7 @@ func (c *Client) HealthCheck(ctx context.Context, healthURL string) error {
 	if err != nil {
 		return fmt.Errorf("health check request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("health check failed: HTTP %d %s", resp.StatusCode, resp.Status)

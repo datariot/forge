@@ -12,9 +12,10 @@ Forge is inspired by DropWizard but designed specifically for Go's strengths - i
 - **Observability Built-in**: OpenTelemetry tracing, structured logging, Prometheus metrics
 - **Health Checks**: Comprehensive liveness and readiness checks
 - **Graceful Lifecycle**: Sophisticated startup and shutdown orchestration
-- **Configuration Management**: Environment-based config with validation
-- **Database Integration**: Transaction-safe PostgreSQL patterns
-- **Event Publishing**: Redis Streams integration
+- **Configuration Management**: Validated config with YAML + env overrides via the configloader bundle
+- **Database Integration**: PostgreSQL connection pooling with health checks
+- **Redis Integration**: Caching, pub/sub, distributed locks, and rate limiting
+- **Resilient HTTP Client**: Circuit breaker, retries, and backoff built in
 - **Security First**: No hardcoded credentials, explicit validation requirements
 
 ## Quick Start
@@ -24,21 +25,29 @@ package main
 
 import (
     "context"
-    "github.com/datariot/forge/framework"
+    "log"
+
     "github.com/datariot/forge/bundles/postgresql"
+    "github.com/datariot/forge/config"
+    "github.com/datariot/forge/framework"
 )
 
 func main() {
-    cfg := MustLoadConfig()
+    cfg := config.DefaultBaseConfig()
+    cfg.ServiceName = "my-service"
 
-    myComponent := NewMyComponent(cfg)
+    pgConfig := postgresql.DefaultConfig()
+    pgConfig.DatabaseURL = "postgres://user:pass@localhost:5432/mydb"
 
-    app := framework.New(
-        framework.WithConfig(&cfg.BaseConfig),
+    app, err := framework.New(
+        framework.WithConfig(&cfg),
         framework.WithVersion("1.0.0"),
-        framework.WithComponent(myComponent),
-        framework.WithBundle(postgresql.Bundle()),
+        framework.WithComponent(NewMyComponent(&cfg)),
+        framework.WithBundle(postgresql.NewBundle(pgConfig)),
     )
+    if err != nil {
+        log.Fatal(err)
+    }
 
     if err := app.Run(context.Background()); err != nil {
         log.Fatal(err)
@@ -112,17 +121,15 @@ See [TESTING.md](TESTING.md) for comprehensive testing strategy.
 Forge follows Clean Architecture principles:
 
 - **Framework**: Core application lifecycle and interfaces
-- **Bundles**: Pre-built integrations (PostgreSQL, Redis, Prometheus, etc.)
+- **Bundles**: Pre-built integrations (PostgreSQL, Redis, JWT, HTTP client, Prometheus, configloader)
 - **Components**: Your business logic implementing framework interfaces
-- **Adapters**: Infrastructure integrations
-- **Config**: Environment-driven configuration management
+- **Config**: Common service configuration with validation
 
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
-- [Component Development](docs/components.md)
-- [Configuration Guide](docs/configuration.md)
-- [Health Checks](docs/health-checks.md)
+- [API Reference](docs/api-reference.md)
+- [Bundles Guide](docs/bundles.md)
 - [Examples](examples/)
 - [Development Guide](CLAUDE.md)
 

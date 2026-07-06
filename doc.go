@@ -74,14 +74,16 @@
 //
 // Forge automatically provides these HTTP endpoints:
 //
-//   - :8080 - gRPC server (configurable via GRPC_ADDR)
+//   - :8080 - gRPC server (configurable via BaseConfig.GRPCAddr; only started
+//     when gRPC registrars are configured)
 //   - :8081/health - Combined health status
 //   - :8081/health/live - Liveness probe
 //   - :8081/health/ready - Readiness probe
 //
 // # Configuration
 //
-// All configuration is environment-driven with sensible defaults:
+// BaseConfig provides sensible defaults; set fields in code, or add the
+// configloader bundle to load YAML files with environment variable overrides:
 //
 //	SERVICE_NAME=my-service
 //	APP_ENV=production

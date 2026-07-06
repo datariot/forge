@@ -186,8 +186,8 @@ func TestIsValidationError(t *testing.T) {
 // TestIsConfigurationError tests configuration error classification
 func TestIsConfigurationError(t *testing.T) {
 	tests := []struct {
-		name       string
-		err        error
+		name        string
+		err         error
 		isConfigErr bool
 	}{
 		{"nil error", nil, false},

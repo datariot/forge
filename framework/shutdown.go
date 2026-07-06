@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -68,27 +69,39 @@ func (so *ShutdownOrchestrator) Shutdown(ctx context.Context) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, so.timeout)
 	defer cancel()
 
-	var errors []error
+	var errs []error
+	var skipped []string
+	timedOut := false
 
 	// Execute hooks sequentially to maintain order
 	for i := len(hooks) - 1; i >= 0; i-- { // Reverse order for proper cleanup
 		hook := hooks[i]
 
-		select {
-		case <-timeoutCtx.Done():
-			errors = append(errors, fmt.Errorf("shutdown timeout exceeded before executing hook '%s'", hook.Name))
-			break
-		default:
-			// Continue with hook execution
+		if !timedOut {
+			select {
+			case <-timeoutCtx.Done():
+				timedOut = true
+			default:
+				// Continue with hook execution
+			}
+		}
+
+		if timedOut {
+			skipped = append(skipped, hook.Name)
+			continue
 		}
 
 		if err := so.executeHook(timeoutCtx, hook); err != nil {
-			errors = append(errors, fmt.Errorf("hook '%s' failed: %w", hook.Name, err))
+			errs = append(errs, fmt.Errorf("hook '%s' failed: %w", hook.Name, err))
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("shutdown completed with %d errors: %v", len(errors), errors)
+	if len(skipped) > 0 {
+		errs = append(errs, fmt.Errorf("shutdown timeout exceeded before executing hooks: %v", skipped))
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	return nil

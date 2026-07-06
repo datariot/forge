@@ -15,13 +15,13 @@
 //
 // # Run the service
 //
-//   go run main.go
+//	go run main.go
 //
 // # Environment Configuration
 //
-//   DATABASE_URL=postgres://user:pass@localhost:5432/forge_example?sslmode=disable
-//   SERVICE_NAME=postgresql-service
-//   APP_ENV=development
+//	DATABASE_URL=postgres://user:pass@localhost:5432/forge_example?sslmode=disable
+//	SERVICE_NAME=postgresql-service
+//	APP_ENV=development
 package main
 
 import (
@@ -42,8 +42,8 @@ type ServiceConfig struct {
 	config.BaseConfig `yaml:",inline"`
 
 	// PostgreSQL configuration
-	DatabaseURL     string `yaml:"database_url" env:"DATABASE_URL"`
-	MaxConnections  int    `yaml:"max_connections" env:"MAX_CONNECTIONS"`
+	DatabaseURL    string `yaml:"database_url" env:"DATABASE_URL"`
+	MaxConnections int    `yaml:"max_connections" env:"MAX_CONNECTIONS"`
 }
 
 // DefaultServiceConfig returns configuration with defaults.

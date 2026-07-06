@@ -187,10 +187,10 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestRecordHTTPRequest(t *testing.T) {
 	cfg := Config{
-		Namespace:        "test",
+		Namespace:         "test",
 		EnableHTTPMetrics: true,
-		HistogramBuckets: []float64{0.01, 0.1, 1.0},
-		ServiceLabels:    map[string]string{},
+		HistogramBuckets:  []float64{0.01, 0.1, 1.0},
+		ServiceLabels:     map[string]string{},
 	}
 	b := newInitializedBundle(t, cfg)
 
@@ -202,10 +202,10 @@ func TestRecordHTTPRequest(t *testing.T) {
 
 func TestRecordHTTPRequest_MetricsDisabled(t *testing.T) {
 	cfg := Config{
-		Namespace:        "test",
+		Namespace:         "test",
 		EnableHTTPMetrics: false,
-		HistogramBuckets: []float64{0.01, 0.1, 1.0},
-		ServiceLabels:    map[string]string{},
+		HistogramBuckets:  []float64{0.01, 0.1, 1.0},
+		ServiceLabels:     map[string]string{},
 	}
 	b := newInitializedBundle(t, cfg)
 
@@ -217,10 +217,10 @@ func TestRecordHTTPRequest_MetricsDisabled(t *testing.T) {
 
 func TestRecordGRPCRequest(t *testing.T) {
 	cfg := Config{
-		Namespace:        "test",
+		Namespace:         "test",
 		EnableGRPCMetrics: true,
-		HistogramBuckets: []float64{0.01, 0.1, 1.0},
-		ServiceLabels:    map[string]string{},
+		HistogramBuckets:  []float64{0.01, 0.1, 1.0},
+		ServiceLabels:     map[string]string{},
 	}
 	b := newInitializedBundle(t, cfg)
 
@@ -230,10 +230,10 @@ func TestRecordGRPCRequest(t *testing.T) {
 
 func TestRecordGRPCRequest_MetricsDisabled(t *testing.T) {
 	cfg := Config{
-		Namespace:        "test",
+		Namespace:         "test",
 		EnableGRPCMetrics: false,
-		HistogramBuckets: []float64{0.01, 0.1, 1.0},
-		ServiceLabels:    map[string]string{},
+		HistogramBuckets:  []float64{0.01, 0.1, 1.0},
+		ServiceLabels:     map[string]string{},
 	}
 	b := newInitializedBundle(t, cfg)
 	b.RecordGRPCRequest("/svc/Method", "OK", time.Millisecond)
@@ -481,10 +481,10 @@ func TestCreateCustomCounter_TooManyLabels(t *testing.T) {
 
 func TestGetMetricsHandler(t *testing.T) {
 	cfg := Config{
-		Namespace:        "test",
+		Namespace:         "test",
 		EnableHTTPMetrics: true,
-		HistogramBuckets: []float64{0.01, 0.1},
-		ServiceLabels:    map[string]string{},
+		HistogramBuckets:  []float64{0.01, 0.1},
+		ServiceLabels:     map[string]string{},
 	}
 	b := newInitializedBundle(t, cfg)
 
@@ -512,10 +512,10 @@ func TestGetSecureMetricsHandler_BasicAuth(t *testing.T) {
 
 	secConfig := SecurityConfig{
 		MaxRequestsInFlight: 3,
-		Timeout:            10 * time.Second,
-		EnableBasicAuth:    true,
-		Username:           "admin",
-		Password:           "secret",
+		Timeout:             10 * time.Second,
+		EnableBasicAuth:     true,
+		Username:            "admin",
+		Password:            "secret",
 	}
 	handler := b.GetSecureMetricsHandler(secConfig)
 
@@ -617,14 +617,14 @@ func TestPrometheusHealthCheck_Liveness(t *testing.T) {
 
 func TestPrometheusHealthCheck_Readiness(t *testing.T) {
 	cfg := Config{
-		Namespace:           "test",
+		Namespace:            "test",
 		EnableDefaultMetrics: false, // avoid registering go/process collectors
-		EnableHTTPMetrics:   true,
-		EnableGRPCMetrics:   false,
+		EnableHTTPMetrics:    true,
+		EnableGRPCMetrics:    false,
 		EnableHealthMetrics:  false,
 		EnableBundleMetrics:  false,
-		HistogramBuckets:    []float64{0.01, 0.1},
-		ServiceLabels:       map[string]string{},
+		HistogramBuckets:     []float64{0.01, 0.1},
+		ServiceLabels:        map[string]string{},
 	}
 	b := newInitializedBundle(t, cfg)
 

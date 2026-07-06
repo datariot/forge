@@ -48,3 +48,12 @@ examples/*/jwt-service
 examples/*/httpclient-service
 examples/*/prometheus-service
 examples/*/config-service
+
+# Compiled example binaries (go build in examples/<name>/ produces examples/<name>/<name>)
+examples/simple-service/simple-service
+examples/config-service/config-service
+examples/jwt-service/jwt-service
+examples/postgresql-service/postgresql-service
+examples/prometheus-service/prometheus-service
+examples/redis-service/redis-service
+examples/httpclient-service/httpclient-service

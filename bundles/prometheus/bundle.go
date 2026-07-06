@@ -141,16 +141,16 @@ func DefaultConfig() Config {
 // Validate validates the Prometheus configuration.
 func (c *Config) Validate() error {
 	if c.Namespace == "" {
-		return fmt.Errorf("namespace is required for Prometheus metrics")
+		return stderrors.New("namespace is required for Prometheus metrics")
 	}
 
 	// Validate metric naming (Prometheus has strict naming rules)
 	if !isValidMetricName(c.Namespace) {
-		return fmt.Errorf("invalid namespace format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
+		return stderrors.New("invalid namespace format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
 	}
 
 	if c.Subsystem != "" && !isValidMetricName(c.Subsystem) {
-		return fmt.Errorf("invalid subsystem format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
+		return stderrors.New("invalid subsystem format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
 	}
 
 	// Validate service labels for security and cardinality
@@ -167,15 +167,15 @@ func (c *Config) Validate() error {
 		}
 		// Prevent sensitive data in labels
 		if strings.Contains(strings.ToLower(key), "password") ||
-		   strings.Contains(strings.ToLower(key), "secret") ||
-		   strings.Contains(strings.ToLower(key), "token") {
+			strings.Contains(strings.ToLower(key), "secret") ||
+			strings.Contains(strings.ToLower(key), "token") {
 			return fmt.Errorf("service label %s appears to contain sensitive data", key)
 		}
 	}
 
 	// Validate histogram buckets
 	if len(c.HistogramBuckets) == 0 {
-		return fmt.Errorf("histogram buckets cannot be empty")
+		return stderrors.New("histogram buckets cannot be empty")
 	}
 
 	if len(c.HistogramBuckets) > 50 {
@@ -185,13 +185,13 @@ func (c *Config) Validate() error {
 	// Ensure buckets are in ascending order and reasonable
 	for i := 1; i < len(c.HistogramBuckets); i++ {
 		if c.HistogramBuckets[i] <= c.HistogramBuckets[i-1] {
-			return fmt.Errorf("histogram buckets must be in ascending order")
+			return stderrors.New("histogram buckets must be in ascending order")
 		}
 	}
 
 	// Validate bucket ranges are reasonable
 	if c.HistogramBuckets[0] <= 0 {
-		return fmt.Errorf("histogram buckets must be positive")
+		return stderrors.New("histogram buckets must be positive")
 	}
 
 	return nil
@@ -205,12 +205,12 @@ type Bundle struct {
 	logger   zerolog.Logger
 
 	// Application metrics
-	httpRequestsTotal     *prometheus.CounterVec
-	httpRequestDuration   *prometheus.HistogramVec
-	grpcRequestsTotal     *prometheus.CounterVec
-	grpcRequestDuration   *prometheus.HistogramVec
-	healthCheckDuration   *prometheus.HistogramVec
-	healthCheckTotal      *prometheus.CounterVec
+	httpRequestsTotal   *prometheus.CounterVec
+	httpRequestDuration *prometheus.HistogramVec
+	grpcRequestsTotal   *prometheus.CounterVec
+	grpcRequestDuration *prometheus.HistogramVec
+	healthCheckDuration *prometheus.HistogramVec
+	healthCheckTotal    *prometheus.CounterVec
 
 	// Bundle integration metrics
 	dbConnectionsActive    prometheus.Gauge
@@ -641,7 +641,7 @@ func (b *Bundle) validateMetricDefinition(name, help string, labelNames []string
 	}
 
 	if help == "" {
-		return fmt.Errorf("metric help text is required")
+		return stderrors.New("metric help text is required")
 	}
 
 	// Prevent high cardinality
@@ -667,15 +667,15 @@ func isValidLabelName(name string) bool {
 
 	// First character must be letter or underscore
 	first := name[0]
-	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_') {
+	if (first < 'a' || first > 'z') && (first < 'A' || first > 'Z') && first != '_' {
 		return false
 	}
 
 	// Remaining characters must be letters, digits, or underscores
 	for i := 1; i < len(name); i++ {
 		char := name[i]
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-			 (char >= '0' && char <= '9') || char == '_') {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') &&
+			(char < '0' || char > '9') && char != '_' {
 			return false
 		}
 	}
@@ -686,18 +686,18 @@ func isValidLabelName(name string) bool {
 // SecurityConfig contains security configuration for the metrics endpoint.
 type SecurityConfig struct {
 	MaxRequestsInFlight int           // Maximum concurrent requests (default: 3)
-	Timeout            time.Duration // Request timeout (default: 10s)
-	EnableBasicAuth    bool          // Enable basic authentication
-	Username           string        // Basic auth username
-	Password           string        // Basic auth password
+	Timeout             time.Duration // Request timeout (default: 10s)
+	EnableBasicAuth     bool          // Enable basic authentication
+	Username            string        // Basic auth username
+	Password            string        // Basic auth password
 }
 
 // DefaultSecurityConfig returns secure defaults for metrics endpoint.
 func DefaultSecurityConfig() SecurityConfig {
 	return SecurityConfig{
 		MaxRequestsInFlight: 3,
-		Timeout:            10 * time.Second,
-		EnableBasicAuth:    false,
+		Timeout:             10 * time.Second,
+		EnableBasicAuth:     false,
 	}
 }
 
@@ -712,7 +712,7 @@ func (b *Bundle) GetSecureMetricsHandler(secConfig SecurityConfig) http.Handler 
 		b.gatherer,
 		promhttp.HandlerOpts{
 			EnableOpenMetrics:   true,
-			Timeout:            secConfig.Timeout,
+			Timeout:             secConfig.Timeout,
 			MaxRequestsInFlight: secConfig.MaxRequestsInFlight,
 		},
 	)
@@ -793,7 +793,7 @@ func (c *PrometheusHealthCheck) Readiness(ctx context.Context) error {
 
 	// Ensure we have at least some metrics registered
 	if len(metricFamilies) == 0 {
-		return fmt.Errorf("no metrics registered in Prometheus registry")
+		return stderrors.New("no metrics registered in Prometheus registry")
 	}
 
 	// Check for expected namespace metrics
@@ -802,8 +802,8 @@ func (c *PrometheusHealthCheck) Readiness(ctx context.Context) error {
 		if family.Name != nil {
 			name := *family.Name
 			if strings.HasPrefix(name, c.bundle.config.Namespace) ||
-			   strings.HasPrefix(name, "go_") ||
-			   strings.HasPrefix(name, "process_") {
+				strings.HasPrefix(name, "go_") ||
+				strings.HasPrefix(name, "process_") {
 				hasNamespaceMetrics = true
 				break
 			}
@@ -825,15 +825,15 @@ func isValidMetricName(name string) bool {
 
 	// First character must be letter or underscore
 	first := name[0]
-	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_' || first == ':') {
+	if (first < 'a' || first > 'z') && (first < 'A' || first > 'Z') && first != '_' && first != ':' {
 		return false
 	}
 
 	// Remaining characters must be letters, digits, underscores, or colons
 	for i := 1; i < len(name); i++ {
 		char := name[i]
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-			 (char >= '0' && char <= '9') || char == '_' || char == ':') {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') &&
+			(char < '0' || char > '9') && char != '_' && char != ':' {
 			return false
 		}
 	}
