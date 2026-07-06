@@ -52,6 +52,7 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -232,9 +233,10 @@ type App struct {
 	grpcHealthServer *health.Server
 
 	// Servers
-	grpcServer   *grpc.Server
-	httpServer   *http.Server
-	grpcListener net.Listener
+	grpcServer       *grpc.Server
+	httpServer       *http.Server
+	grpcListener     net.Listener
+	httpServerConfig *HTTPServerConfig
 
 	// Components and bundles
 	components []Component
@@ -404,6 +406,18 @@ func WithShutdownHook(hook ShutdownHook) AppOption {
 			return fmt.Errorf("shutdown hook cannot be nil")
 		}
 		app.shutdownHooks = append(app.shutdownHooks, hook)
+		return nil
+	}
+}
+
+// WithHTTPServerConfig sets a custom HTTP server configuration, overriding the
+// framework's default endpoint, CORS, and request logging settings.
+func WithHTTPServerConfig(cfg HTTPServerConfig) AppOption {
+	return func(app *App) error {
+		if err := cfg.Validate(); err != nil {
+			return fmt.Errorf("invalid HTTP server config: %w", err)
+		}
+		app.httpServerConfig = &cfg
 		return nil
 	}
 }
@@ -708,6 +722,17 @@ func (a *App) startGRPCServer(ctx context.Context) error {
 		opts = append(opts, grpc.ChainStreamInterceptor(a.streamInterceptors...))
 	}
 
+	// Apply configured message size and connection timeout limits
+	if a.config.GRPCMaxRecvMsgSize > 0 {
+		opts = append(opts, grpc.MaxRecvMsgSize(a.config.GRPCMaxRecvMsgSize))
+	}
+	if a.config.GRPCMaxSendMsgSize > 0 {
+		opts = append(opts, grpc.MaxSendMsgSize(a.config.GRPCMaxSendMsgSize))
+	}
+	if a.config.GRPCTimeout > 0 {
+		opts = append(opts, grpc.ConnectionTimeout(a.config.GRPCTimeout))
+	}
+
 	// Create gRPC server with interceptors
 	a.grpcServer = grpc.NewServer(opts...)
 
@@ -749,19 +774,17 @@ func (a *App) startGRPCServer(ctx context.Context) error {
 
 // startHTTPServer creates and starts the enhanced HTTP server.
 func (a *App) startHTTPServer(ctx context.Context) error {
-	// Create enhanced HTTP server configuration
-	httpConfig := HTTPServerConfig{
-		EnableCORS:           a.config.EnableCORS,
-		CORSOrigins:          a.config.CORSOrigins,
-		CORSMethods:          []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		CORSHeaders:          []string{"Content-Type", "Authorization"},
-		CORSCredentials:      false,
-		EnableMetrics:        a.config.EnableMetrics,
-		MetricsPath:          "/metrics",
-		HealthPathPrefix:     "/health",
-		EnableRequestLogging: a.config.EnableRequestLogging,
-		LogRequestBody:       false,
-		LogResponseBody:      false,
+	// Use the user-supplied HTTP server configuration if provided, otherwise
+	// fall back to defaults driven by the base config's toggles.
+	var httpConfig HTTPServerConfig
+	if a.httpServerConfig != nil {
+		httpConfig = *a.httpServerConfig
+	} else {
+		httpConfig = DefaultHTTPServerConfig()
+		httpConfig.EnableCORS = a.config.EnableCORS
+		httpConfig.CORSOrigins = a.config.CORSOrigins
+		httpConfig.EnableMetrics = a.config.EnableMetrics
+		httpConfig.EnableRequestLogging = a.config.EnableRequestLogging
 	}
 
 	// Build enhanced HTTP server
@@ -774,14 +797,25 @@ func (a *App) startHTTPServer(ctx context.Context) error {
 		}
 	}
 
-	a.httpServer = builder.Build()
+	httpServer, err := builder.Build()
+	if err != nil {
+		return fmt.Errorf("failed to build HTTP server: %w", err)
+	}
+	a.httpServer = httpServer
+
+	// Create listener synchronously so bind failures (e.g. port already in use)
+	// are reported to the caller instead of only being logged from the goroutine.
+	listener, err := net.Listen("tcp", a.config.HTTPAddr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", a.config.HTTPAddr, err)
+	}
 
 	// Start server in goroutine
 	go func() {
 		logger := a.logging.WithService(a.config.ServiceName, "http")
 		logger.Info().Str("addr", a.config.HTTPAddr).Msg("Starting HTTP server")
 
-		if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := a.httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error().Err(err).Msg("HTTP server error")
 		}
 	}()

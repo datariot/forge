@@ -151,7 +151,7 @@ func DefaultBaseConfig() BaseConfig {
 		LogLevel:              "info",
 		ShutdownTimeout:       30 * time.Second,
 		ReadinessInitialDelay: 0,
-		OTELEndpoint:          "http://localhost:4317",
+		OTELEndpoint:          "",
 		OTELSampleRate:        1.0,
 		GRPCMaxRecvMsgSize:    4 * 1024 * 1024, // 4MB
 		GRPCMaxSendMsgSize:    4 * 1024 * 1024, // 4MB
