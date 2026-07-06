@@ -15,24 +15,24 @@
 //
 // # Run the service
 //
-//   REDIS_URL="redis://localhost:6379/0" go run main.go
+//	REDIS_URL="redis://localhost:6379/0" go run main.go
 //
 // # Test the service
 //
-//   # Test caching
-//   curl -X POST http://localhost:8081/api/cache/user/123 \
-//     -H "Content-Type: application/json" \
-//     -d '{"name": "John Doe", "email": "john@example.com"}'
+//	# Test caching
+//	curl -X POST http://localhost:8081/api/cache/user/123 \
+//	  -H "Content-Type: application/json" \
+//	  -d '{"name": "John Doe", "email": "john@example.com"}'
 //
-//   curl http://localhost:8081/api/cache/user/123
+//	curl http://localhost:8081/api/cache/user/123
 //
-//   # Test pub/sub
-//   curl -X POST http://localhost:8081/api/events/user.created \
-//     -H "Content-Type: application/json" \
-//     -d '{"user_id": "123", "event": "user_created"}'
+//	# Test pub/sub
+//	curl -X POST http://localhost:8081/api/events/user.created \
+//	  -H "Content-Type: application/json" \
+//	  -d '{"user_id": "123", "event": "user_created"}'
 //
-//   # Test rate limiting
-//   for i in {1..10}; do curl http://localhost:8081/api/limited; done
+//	# Test rate limiting
+//	for i in {1..10}; do curl http://localhost:8081/api/limited; done
 package main
 
 import (
@@ -367,12 +367,12 @@ func (s *CacheService) handleRedisStats(w http.ResponseWriter, r *http.Request) 
 	response := map[string]interface{}{
 		"redis_info": strings.Split(info, "\r\n"),
 		"pool_stats": map[string]interface{}{
-			"hits":         stats.Hits,
-			"misses":       stats.Misses,
-			"timeouts":     stats.Timeouts,
-			"total_conns":  stats.TotalConns,
-			"idle_conns":   stats.IdleConns,
-			"stale_conns":  stats.StaleConns,
+			"hits":        stats.Hits,
+			"misses":      stats.Misses,
+			"timeouts":    stats.Timeouts,
+			"total_conns": stats.TotalConns,
+			"idle_conns":  stats.IdleConns,
+			"stale_conns": stats.StaleConns,
 		},
 		"timestamp": time.Now().UTC(),
 	}

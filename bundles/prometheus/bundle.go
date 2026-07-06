@@ -167,8 +167,8 @@ func (c *Config) Validate() error {
 		}
 		// Prevent sensitive data in labels
 		if strings.Contains(strings.ToLower(key), "password") ||
-		   strings.Contains(strings.ToLower(key), "secret") ||
-		   strings.Contains(strings.ToLower(key), "token") {
+			strings.Contains(strings.ToLower(key), "secret") ||
+			strings.Contains(strings.ToLower(key), "token") {
 			return fmt.Errorf("service label %s appears to contain sensitive data", key)
 		}
 	}
@@ -205,12 +205,12 @@ type Bundle struct {
 	logger   zerolog.Logger
 
 	// Application metrics
-	httpRequestsTotal     *prometheus.CounterVec
-	httpRequestDuration   *prometheus.HistogramVec
-	grpcRequestsTotal     *prometheus.CounterVec
-	grpcRequestDuration   *prometheus.HistogramVec
-	healthCheckDuration   *prometheus.HistogramVec
-	healthCheckTotal      *prometheus.CounterVec
+	httpRequestsTotal   *prometheus.CounterVec
+	httpRequestDuration *prometheus.HistogramVec
+	grpcRequestsTotal   *prometheus.CounterVec
+	grpcRequestDuration *prometheus.HistogramVec
+	healthCheckDuration *prometheus.HistogramVec
+	healthCheckTotal    *prometheus.CounterVec
 
 	// Bundle integration metrics
 	dbConnectionsActive    prometheus.Gauge
@@ -675,7 +675,7 @@ func isValidLabelName(name string) bool {
 	for i := 1; i < len(name); i++ {
 		char := name[i]
 		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-			 (char >= '0' && char <= '9') || char == '_') {
+			(char >= '0' && char <= '9') || char == '_') {
 			return false
 		}
 	}
@@ -686,18 +686,18 @@ func isValidLabelName(name string) bool {
 // SecurityConfig contains security configuration for the metrics endpoint.
 type SecurityConfig struct {
 	MaxRequestsInFlight int           // Maximum concurrent requests (default: 3)
-	Timeout            time.Duration // Request timeout (default: 10s)
-	EnableBasicAuth    bool          // Enable basic authentication
-	Username           string        // Basic auth username
-	Password           string        // Basic auth password
+	Timeout             time.Duration // Request timeout (default: 10s)
+	EnableBasicAuth     bool          // Enable basic authentication
+	Username            string        // Basic auth username
+	Password            string        // Basic auth password
 }
 
 // DefaultSecurityConfig returns secure defaults for metrics endpoint.
 func DefaultSecurityConfig() SecurityConfig {
 	return SecurityConfig{
 		MaxRequestsInFlight: 3,
-		Timeout:            10 * time.Second,
-		EnableBasicAuth:    false,
+		Timeout:             10 * time.Second,
+		EnableBasicAuth:     false,
 	}
 }
 
@@ -712,7 +712,7 @@ func (b *Bundle) GetSecureMetricsHandler(secConfig SecurityConfig) http.Handler 
 		b.gatherer,
 		promhttp.HandlerOpts{
 			EnableOpenMetrics:   true,
-			Timeout:            secConfig.Timeout,
+			Timeout:             secConfig.Timeout,
 			MaxRequestsInFlight: secConfig.MaxRequestsInFlight,
 		},
 	)
@@ -802,8 +802,8 @@ func (c *PrometheusHealthCheck) Readiness(ctx context.Context) error {
 		if family.Name != nil {
 			name := *family.Name
 			if strings.HasPrefix(name, c.bundle.config.Namespace) ||
-			   strings.HasPrefix(name, "go_") ||
-			   strings.HasPrefix(name, "process_") {
+				strings.HasPrefix(name, "go_") ||
+				strings.HasPrefix(name, "process_") {
 				hasNamespaceMetrics = true
 				break
 			}
@@ -833,7 +833,7 @@ func isValidMetricName(name string) bool {
 	for i := 1; i < len(name); i++ {
 		char := name[i]
 		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-			 (char >= '0' && char <= '9') || char == '_' || char == ':') {
+			(char >= '0' && char <= '9') || char == '_' || char == ':') {
 			return false
 		}
 	}

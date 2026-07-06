@@ -14,20 +14,20 @@
 //
 // # Run the service
 //
-//   JWT_SECRET="your-very-secure-secret-key-here-32-bytes-minimum" \
-//   JWT_ISSUER="auth-service" \
-//   JWT_AUDIENCE="forge-services" \
-//   go run main.go
+//	JWT_SECRET="your-very-secure-secret-key-here-32-bytes-minimum" \
+//	JWT_ISSUER="auth-service" \
+//	JWT_AUDIENCE="forge-services" \
+//	go run main.go
 //
 // # Test Authentication
 //
-//   # Generate a token (in a real setup, your auth service would do this)
-//   curl -X POST http://localhost:8081/auth/token \
-//     -H "Content-Type: application/json" \
-//     -d '{"service_id": "test-client", "permissions": ["read:users"]}'
+//	# Generate a token (in a real setup, your auth service would do this)
+//	curl -X POST http://localhost:8081/auth/token \
+//	  -H "Content-Type: application/json" \
+//	  -d '{"service_id": "test-client", "permissions": ["read:users"]}'
 //
-//   # Use token to access protected endpoint
-//   curl -H "Authorization: Bearer <token>" http://localhost:8081/api/protected
+//	# Use token to access protected endpoint
+//	curl -H "Authorization: Bearer <token>" http://localhost:8081/api/protected
 package main
 
 import (
@@ -161,12 +161,12 @@ func (s *AuthenticatedService) handleProtected(w http.ResponseWriter, r *http.Re
 	}
 
 	response := map[string]interface{}{
-		"message":      "This is a protected endpoint",
-		"service":      s.config.ServiceName,
+		"message":               "This is a protected endpoint",
+		"service":               s.config.ServiceName,
 		"authenticated_service": claims.ServiceName,
-		"service_id":   claims.ServiceID,
-		"permissions":  claims.Permissions,
-		"time":         time.Now().UTC(),
+		"service_id":            claims.ServiceID,
+		"permissions":           claims.Permissions,
+		"time":                  time.Now().UTC(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -182,13 +182,13 @@ func (s *AuthenticatedService) handleAdmin(w http.ResponseWriter, r *http.Reques
 	}
 
 	response := map[string]interface{}{
-		"message":      "This is an admin endpoint",
-		"service":      s.config.ServiceName,
+		"message":               "This is an admin endpoint",
+		"service":               s.config.ServiceName,
 		"authenticated_service": claims.ServiceName,
-		"service_id":   claims.ServiceID,
-		"permissions":  claims.Permissions,
-		"admin_access": jwt.HasPermission(r.Context(), "admin"),
-		"time":         time.Now().UTC(),
+		"service_id":            claims.ServiceID,
+		"permissions":           claims.Permissions,
+		"admin_access":          jwt.HasPermission(r.Context(), "admin"),
+		"time":                  time.Now().UTC(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

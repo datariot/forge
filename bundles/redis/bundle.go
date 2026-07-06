@@ -98,11 +98,11 @@ type Config struct {
 	RedisURL string
 
 	// Connection pool configuration
-	PoolSize        int           // Maximum number of socket connections (default: 10)
-	MinIdleConns    int           // Minimum number of idle connections (default: 2)
-	MaxIdleTime     time.Duration // Maximum amount of time a connection may be idle (default: 30 minutes)
-	MaxConnAge      time.Duration // Maximum amount of time a connection may be reused (default: 1 hour)
-	PoolTimeout     time.Duration // Amount of time client waits for connection (default: 4 seconds)
+	PoolSize     int           // Maximum number of socket connections (default: 10)
+	MinIdleConns int           // Minimum number of idle connections (default: 2)
+	MaxIdleTime  time.Duration // Maximum amount of time a connection may be idle (default: 30 minutes)
+	MaxConnAge   time.Duration // Maximum amount of time a connection may be reused (default: 1 hour)
+	PoolTimeout  time.Duration // Amount of time client waits for connection (default: 4 seconds)
 
 	// Timeouts
 	DialTimeout  time.Duration // Timeout for establishing new connections (default: 5 seconds)

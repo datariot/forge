@@ -219,7 +219,6 @@ func (b *Bundle) HealthChecks() []forgeHealth.Check {
 	}
 }
 
-
 // PostgreSQLHealthCheck implements health checking for PostgreSQL connections.
 type PostgreSQLHealthCheck struct {
 	db      *sql.DB

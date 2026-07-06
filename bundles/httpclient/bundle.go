@@ -134,10 +134,10 @@ type Config struct {
 	Timeout time.Duration
 
 	// Transport configuration
-	MaxIdleConns        int           // Maximum idle connections (default: 100)
-	MaxIdleConnsPerHost int           // Maximum idle connections per host (default: 10)
-	IdleConnTimeout     time.Duration // Idle connection timeout (default: 90 seconds)
-	TLSHandshakeTimeout time.Duration // TLS handshake timeout (default: 10 seconds)
+	MaxIdleConns          int           // Maximum idle connections (default: 100)
+	MaxIdleConnsPerHost   int           // Maximum idle connections per host (default: 10)
+	IdleConnTimeout       time.Duration // Idle connection timeout (default: 90 seconds)
+	TLSHandshakeTimeout   time.Duration // TLS handshake timeout (default: 10 seconds)
 	ExpectContinueTimeout time.Duration // Expect 100-continue timeout (default: 1 second)
 
 	// TLS configuration
@@ -157,11 +157,11 @@ type Config struct {
 	CircuitBreakerConfig CircuitBreakerConfig
 
 	// Logging and observability
-	EnableRequestLogging  bool // Enable request/response logging
-	EnableMetrics         bool // Enable request metrics collection
-	LogRequestBody        bool // Log request bodies (be careful with sensitive data)
-	LogResponseBody       bool // Log response bodies (be careful with sensitive data)
-	MaxLogBodySize        int  // Maximum body size to log (default: 1024 bytes)
+	EnableRequestLogging bool // Enable request/response logging
+	EnableMetrics        bool // Enable request metrics collection
+	LogRequestBody       bool // Log request bodies (be careful with sensitive data)
+	LogResponseBody      bool // Log response bodies (be careful with sensitive data)
+	MaxLogBodySize       int  // Maximum body size to log (default: 1024 bytes)
 
 	// User agent
 	UserAgent string // User agent string (default: "Forge-HTTP-Client/1.0")
@@ -169,44 +169,44 @@ type Config struct {
 
 // RetryConfig contains retry policy configuration.
 type RetryConfig struct {
-	MaxRetries      int           // Maximum number of retries (default: 3)
-	InitialInterval time.Duration // Initial retry interval (default: 100ms)
-	MaxInterval     time.Duration // Maximum retry interval (default: 5s)
-	Multiplier      float64       // Backoff multiplier (default: 2.0)
-	RandomizationFactor float64   // Randomization factor (default: 0.1)
+	MaxRetries          int           // Maximum number of retries (default: 3)
+	InitialInterval     time.Duration // Initial retry interval (default: 100ms)
+	MaxInterval         time.Duration // Maximum retry interval (default: 5s)
+	Multiplier          float64       // Backoff multiplier (default: 2.0)
+	RandomizationFactor float64       // Randomization factor (default: 0.1)
 }
 
 // CircuitBreakerConfig contains circuit breaker configuration.
 type CircuitBreakerConfig struct {
-	Name          string        // Circuit breaker name for metrics
-	MaxRequests   uint32        // Max requests in half-open state (default: 3)
-	Interval      time.Duration // Interval to clear failure counts (default: 60s)
-	Timeout       time.Duration // Timeout in open state (default: 30s)
-	ReadyToTrip   func(counts gobreaker.Counts) bool // Custom trip function
+	Name        string                             // Circuit breaker name for metrics
+	MaxRequests uint32                             // Max requests in half-open state (default: 3)
+	Interval    time.Duration                      // Interval to clear failure counts (default: 60s)
+	Timeout     time.Duration                      // Timeout in open state (default: 30s)
+	ReadyToTrip func(counts gobreaker.Counts) bool // Custom trip function
 }
 
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Timeout:                 30 * time.Second,
-		MaxIdleConns:           100,
-		MaxIdleConnsPerHost:    10,
-		IdleConnTimeout:        90 * time.Second,
-		TLSHandshakeTimeout:    10 * time.Second,
-		ExpectContinueTimeout:  1 * time.Second,
-		APIKeyHeader:           "X-API-Key",
-		EnableRequestLogging:   true,
-		EnableMetrics:          true,
-		LogRequestBody:         false,
-		LogResponseBody:        false,
-		MaxLogBodySize:         1024,
-		UserAgent:              "Forge-HTTP-Client/1.0",
+		Timeout:               30 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		APIKeyHeader:          "X-API-Key",
+		EnableRequestLogging:  true,
+		EnableMetrics:         true,
+		LogRequestBody:        false,
+		LogResponseBody:       false,
+		MaxLogBodySize:        1024,
+		UserAgent:             "Forge-HTTP-Client/1.0",
 		RetryConfig: RetryConfig{
-			MaxRetries:             3,
-			InitialInterval:        100 * time.Millisecond,
-			MaxInterval:           5 * time.Second,
-			Multiplier:            2.0,
-			RandomizationFactor:   0.1,
+			MaxRetries:          3,
+			InitialInterval:     100 * time.Millisecond,
+			MaxInterval:         5 * time.Second,
+			Multiplier:          2.0,
+			RandomizationFactor: 0.1,
 		},
 		CircuitBreakerConfig: CircuitBreakerConfig{
 			MaxRequests: 3,

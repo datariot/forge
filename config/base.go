@@ -66,12 +66,13 @@ import (
 // All fields support environment variable override using the env struct tag.
 //
 // Example environment variables:
-//   SERVICE_NAME=user-service
-//   APP_ENV=production
-//   GRPC_ADDR=:8080
-//   HTTP_ADDR=:8081
-//   LOG_LEVEL=info
-//   DATABASE_URL=postgres://localhost:5432/mydb
+//
+//	SERVICE_NAME=user-service
+//	APP_ENV=production
+//	GRPC_ADDR=:8080
+//	HTTP_ADDR=:8081
+//	LOG_LEVEL=info
+//	DATABASE_URL=postgres://localhost:5432/mydb
 type BaseConfig struct {
 	// ServiceName is the name of the service (e.g., "user-service", "auth-service")
 	ServiceName string `yaml:"service_name" env:"SERVICE_NAME"`

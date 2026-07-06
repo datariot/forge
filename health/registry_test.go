@@ -118,9 +118,9 @@ func TestRegistry_CheckLiveness_FailingCheck(t *testing.T) {
 	registry := NewRegistry(nil)
 
 	failingCheck := &testCheck{
-		name:          "failing-check",
-		livenessErr:   errors.New("check failed"),
-		readinessErr:  errors.New("check failed"),
+		name:         "failing-check",
+		livenessErr:  errors.New("check failed"),
+		readinessErr: errors.New("check failed"),
 	}
 	config := DefaultCheckConfig("failing-check")
 	config.Required = true
@@ -233,7 +233,7 @@ func TestRegistry_ConcurrentChecks(t *testing.T) {
 	// Add multiple checks with delays
 	for i := 0; i < 5; i++ {
 		check := &testCheck{
-			name: "slow-check-" + string(rune('A'+i)),
+			name:  "slow-check-" + string(rune('A'+i)),
 			delay: 100 * time.Millisecond,
 		}
 		registry.Register(check, DefaultCheckConfig(check.name))

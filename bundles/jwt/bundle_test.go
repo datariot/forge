@@ -395,7 +395,7 @@ func TestBundle_ClaimsFromContext(t *testing.T) {
 
 // responseRecorder is a minimal ResponseWriter for JWT tests.
 type responseRecorder struct {
-	Code int
+	Code   int
 	header http.Header
 }
 
@@ -403,9 +403,9 @@ func newResponseRecorder() *responseRecorder {
 	return &responseRecorder{Code: 200, header: make(http.Header)}
 }
 
-func (r *responseRecorder) Header() http.Header        { return r.header }
+func (r *responseRecorder) Header() http.Header         { return r.header }
 func (r *responseRecorder) Write(b []byte) (int, error) { return len(b), nil }
-func (r *responseRecorder) WriteHeader(code int)       { r.Code = code }
+func (r *responseRecorder) WriteHeader(code int)        { r.Code = code }
 
 // TestHasPermission tests permission checking.
 func TestHasPermission(t *testing.T) {

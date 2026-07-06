@@ -114,7 +114,6 @@ func (so *ShutdownOrchestrator) executeHook(ctx context.Context, hook Orchestrat
 	}
 }
 
-
 // ComponentShutdownHook creates a shutdown hook for a Component.
 func ComponentShutdownHook(name string, component Component) OrchestrationHook {
 	return OrchestrationHook{

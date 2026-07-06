@@ -121,9 +121,9 @@ type Config struct {
 // DefaultConfig returns a Config with sensible secure defaults.
 func DefaultConfig() Config {
 	return Config{
-		TokenDuration: 1 * time.Hour,  // Shorter duration for better security
-		ClockSkew:     1 * time.Minute, // Reduced clock skew tolerance
-		RequireHTTPS:  true,            // Secure by default
+		TokenDuration: 1 * time.Hour,       // Shorter duration for better security
+		ClockSkew:     1 * time.Minute,     // Reduced clock skew tolerance
+		RequireHTTPS:  true,                // Secure by default
 		SkipPaths:     []string{"/health"}, // Only health checks skip auth by default
 	}
 }
@@ -171,9 +171,9 @@ type ServiceClaims struct {
 
 // Bundle provides JWT authentication for Forge applications.
 type Bundle struct {
-	config      Config
-	parser      *jwt.Parser
-	tokenCache  *tokenCache
+	config     Config
+	parser     *jwt.Parser
+	tokenCache *tokenCache
 }
 
 // NewBundle creates a new JWT authentication bundle.
@@ -663,6 +663,7 @@ func validateServiceIdentifier(identifier string) error {
 
 	return nil
 }
+
 // Stop implements the Bundle interface for graceful shutdown.
 // JWT bundle has no persistent resources requiring cleanup.
 func (b *Bundle) Stop(ctx context.Context) error {

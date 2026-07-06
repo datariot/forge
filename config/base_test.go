@@ -178,10 +178,10 @@ func TestBaseConfig_IsProduction(t *testing.T) {
 // TestBaseConfig_ShouldEnableReflection tests reflection enablement logic
 func TestBaseConfig_ShouldEnableReflection(t *testing.T) {
 	tests := []struct {
-		name             string
-		env              string
-		explicitEnable   bool
-		expectedEnabled  bool
+		name            string
+		env             string
+		explicitEnable  bool
+		expectedEnabled bool
 	}{
 		{"development implicit", "development", false, true},
 		{"production implicit", "production", false, false},

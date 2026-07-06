@@ -145,11 +145,11 @@ func (c *TestComponent) HealthChecks() []forgeHealth.Check {
 
 // TestBundle provides a mock Bundle implementation for testing.
 type TestBundle struct {
-	BundleName   string
-	InitCalled   bool
-	InitError    error
-	StopCalled   bool
-	StopError    error
+	BundleName string
+	InitCalled bool
+	InitError  error
+	StopCalled bool
+	StopError  error
 }
 
 // NewTestBundle creates a new test bundle.

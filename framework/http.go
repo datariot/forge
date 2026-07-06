@@ -34,9 +34,9 @@ type HTTPServerConfig struct {
 	CORSCredentials bool     `yaml:"cors_credentials" env:"CORS_CREDENTIALS"`
 
 	// Endpoint configuration
-	EnableMetrics     bool   `yaml:"enable_metrics" env:"ENABLE_METRICS"`
-	MetricsPath       string `yaml:"metrics_path" env:"METRICS_PATH"`
-	HealthPathPrefix  string `yaml:"health_path_prefix" env:"HEALTH_PATH_PREFIX"`
+	EnableMetrics    bool   `yaml:"enable_metrics" env:"ENABLE_METRICS"`
+	MetricsPath      string `yaml:"metrics_path" env:"METRICS_PATH"`
+	HealthPathPrefix string `yaml:"health_path_prefix" env:"HEALTH_PATH_PREFIX"`
 
 	// Request logging
 	EnableRequestLogging bool `yaml:"enable_request_logging" env:"ENABLE_REQUEST_LOGGING"`
@@ -106,11 +106,11 @@ func (c *HTTPServerConfig) Validate() error {
 
 // HTTPServerBuilder builds an enhanced HTTP server with configurable endpoints.
 type HTTPServerBuilder struct {
-	config    HTTPServerConfig
-	mux       *http.ServeMux
-	app       *App
-	logger    zerolog.Logger
-	registry  prometheus.Registerer
+	config   HTTPServerConfig
+	mux      *http.ServeMux
+	app      *App
+	logger   zerolog.Logger
+	registry prometheus.Registerer
 }
 
 // NewHTTPServerBuilder creates a new HTTP server builder.
@@ -201,8 +201,8 @@ func (b *HTTPServerBuilder) registerMetricsEndpoint() {
 		prometheus.DefaultGatherer,
 		promhttp.HandlerOpts{
 			EnableOpenMetrics: true,
-			Timeout:          30 * time.Second,
-			ErrorLog:         &promLogAdapter{logger: b.logger},
+			Timeout:           30 * time.Second,
+			ErrorLog:          &promLogAdapter{logger: b.logger},
 		},
 	)
 

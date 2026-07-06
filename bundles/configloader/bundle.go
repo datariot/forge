@@ -51,13 +51,16 @@
 // # Environment Variable Binding
 //
 // The loader automatically binds environment variables based on:
+//
 //   - Field names (converted to UPPER_SNAKE_CASE)
+//
 //   - `env` struct tags for custom names
+//
 //   - `envPrefix` configuration for namespacing
 //
-//	DatabaseURL string `env:"DATABASE_URL"`           // Exact name
-//	APITimeout  int    `env:"API_TIMEOUT_SECONDS"`    // Custom name
-//	Debug       bool   // Automatic: DEBUG or MYSERVICE_DEBUG (with prefix)
+//     DatabaseURL string `env:"DATABASE_URL"`           // Exact name
+//     APITimeout  int    `env:"API_TIMEOUT_SECONDS"`    // Custom name
+//     Debug       bool   // Automatic: DEBUG or MYSERVICE_DEBUG (with prefix)
 //
 // # Hot Reload
 //
@@ -122,8 +125,8 @@ type Config struct {
 	SecureLogging bool
 
 	// Security configuration
-	MaxFileSize      int64    // Maximum configuration file size (default: 1MB)
-	AllowedPaths     []string // Allowed configuration file directories
+	MaxFileSize      int64       // Maximum configuration file size (default: 1MB)
+	AllowedPaths     []string    // Allowed configuration file directories
 	RequiredFileMode os.FileMode // Required file permissions (default: 0o644)
 }
 
@@ -275,19 +278,19 @@ func (b *Bundle) initializeWatcher() error {
 
 // Loader provides configuration loading functionality.
 type Loader struct {
-	config      Config
-	loadedFrom  string
+	config          Config
+	loadedFrom      string
 	changeCallbacks []func(interface{})
-	mu          sync.RWMutex
+	mu              sync.RWMutex
 }
 
 // LoadResult contains information about the configuration loading process.
 type LoadResult struct {
-	LoadedFrom     string            `json:"loaded_from"`
-	Sources        []string          `json:"sources"`
-	EnvVarsUsed    []string          `json:"env_vars_used"`
-	DefaultsApplied []string         `json:"defaults_applied"`
-	ValidationErrors []string        `json:"validation_errors,omitempty"`
+	LoadedFrom       string   `json:"loaded_from"`
+	Sources          []string `json:"sources"`
+	EnvVarsUsed      []string `json:"env_vars_used"`
+	DefaultsApplied  []string `json:"defaults_applied"`
+	ValidationErrors []string `json:"validation_errors,omitempty"`
 }
 
 // Load loads configuration into the provided struct from multiple sources.
