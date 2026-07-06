@@ -141,16 +141,16 @@ func DefaultConfig() Config {
 // Validate validates the Prometheus configuration.
 func (c *Config) Validate() error {
 	if c.Namespace == "" {
-		return fmt.Errorf("namespace is required for Prometheus metrics")
+		return stderrors.New("namespace is required for Prometheus metrics")
 	}
 
 	// Validate metric naming (Prometheus has strict naming rules)
 	if !isValidMetricName(c.Namespace) {
-		return fmt.Errorf("invalid namespace format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
+		return stderrors.New("invalid namespace format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
 	}
 
 	if c.Subsystem != "" && !isValidMetricName(c.Subsystem) {
-		return fmt.Errorf("invalid subsystem format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
+		return stderrors.New("invalid subsystem format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
 	}
 
 	// Validate service labels for security and cardinality
@@ -175,7 +175,7 @@ func (c *Config) Validate() error {
 
 	// Validate histogram buckets
 	if len(c.HistogramBuckets) == 0 {
-		return fmt.Errorf("histogram buckets cannot be empty")
+		return stderrors.New("histogram buckets cannot be empty")
 	}
 
 	if len(c.HistogramBuckets) > 50 {
@@ -185,13 +185,13 @@ func (c *Config) Validate() error {
 	// Ensure buckets are in ascending order and reasonable
 	for i := 1; i < len(c.HistogramBuckets); i++ {
 		if c.HistogramBuckets[i] <= c.HistogramBuckets[i-1] {
-			return fmt.Errorf("histogram buckets must be in ascending order")
+			return stderrors.New("histogram buckets must be in ascending order")
 		}
 	}
 
 	// Validate bucket ranges are reasonable
 	if c.HistogramBuckets[0] <= 0 {
-		return fmt.Errorf("histogram buckets must be positive")
+		return stderrors.New("histogram buckets must be positive")
 	}
 
 	return nil
@@ -641,7 +641,7 @@ func (b *Bundle) validateMetricDefinition(name, help string, labelNames []string
 	}
 
 	if help == "" {
-		return fmt.Errorf("metric help text is required")
+		return stderrors.New("metric help text is required")
 	}
 
 	// Prevent high cardinality
@@ -793,7 +793,7 @@ func (c *PrometheusHealthCheck) Readiness(ctx context.Context) error {
 
 	// Ensure we have at least some metrics registered
 	if len(metricFamilies) == 0 {
-		return fmt.Errorf("no metrics registered in Prometheus registry")
+		return stderrors.New("no metrics registered in Prometheus registry")
 	}
 
 	// Check for expected namespace metrics

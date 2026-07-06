@@ -69,6 +69,7 @@ package jwt
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -131,31 +132,31 @@ func DefaultConfig() Config {
 // Validate validates the JWT configuration.
 func (c *Config) Validate() error {
 	if len(c.SecretKey) == 0 {
-		return fmt.Errorf("jwt secret key is required")
+		return stderrors.New("jwt secret key is required")
 	}
 
 	if len(c.SecretKey) < 32 {
-		return fmt.Errorf("jwt secret key must be at least 32 bytes for security")
+		return stderrors.New("jwt secret key must be at least 32 bytes for security")
 	}
 
 	if c.Issuer == "" {
-		return fmt.Errorf("jwt issuer is required")
+		return stderrors.New("jwt issuer is required")
 	}
 
 	if c.Audience == "" {
-		return fmt.Errorf("jwt audience is required")
+		return stderrors.New("jwt audience is required")
 	}
 
 	if c.ServiceName == "" {
-		return fmt.Errorf("service name is required for JWT authentication")
+		return stderrors.New("service name is required for JWT authentication")
 	}
 
 	if c.TokenDuration <= 0 {
-		return fmt.Errorf("token duration must be positive")
+		return stderrors.New("token duration must be positive")
 	}
 
 	if c.ClockSkew < 0 {
-		return fmt.Errorf("clock skew must be non-negative")
+		return stderrors.New("clock skew must be non-negative")
 	}
 
 	return nil
@@ -398,17 +399,17 @@ func (b *Bundle) HTTPMiddleware(next http.Handler) http.Handler {
 func (b *Bundle) extractTokenFromMetadata(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return "", fmt.Errorf("no metadata found")
+		return "", stderrors.New("no metadata found")
 	}
 
 	authHeaders := md.Get("authorization")
 	if len(authHeaders) == 0 {
-		return "", fmt.Errorf("no authorization header found")
+		return "", stderrors.New("no authorization header found")
 	}
 
 	authHeader := authHeaders[0]
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return "", fmt.Errorf("invalid authorization header format")
+		return "", stderrors.New("invalid authorization header format")
 	}
 
 	return strings.TrimPrefix(authHeader, "Bearer "), nil
@@ -424,11 +425,11 @@ func (b *Bundle) addTokenToMetadata(ctx context.Context, token string) context.C
 func (b *Bundle) extractTokenFromHTTP(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		return "", fmt.Errorf("no authorization header found")
+		return "", stderrors.New("no authorization header found")
 	}
 
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return "", fmt.Errorf("invalid authorization header format")
+		return "", stderrors.New("invalid authorization header format")
 	}
 
 	return strings.TrimPrefix(authHeader, "Bearer "), nil
@@ -643,22 +644,22 @@ func (tc *tokenCache) cleanup() {
 // validateServiceIdentifier validates service ID and name formats to prevent injection attacks.
 func validateServiceIdentifier(identifier string) error {
 	if identifier == "" {
-		return fmt.Errorf("identifier cannot be empty")
+		return stderrors.New("identifier cannot be empty")
 	}
 
 	// Service identifiers should only contain alphanumeric characters, hyphens, and underscores
 	// This prevents injection attacks and ensures safe usage in logs and metrics
 	if !validServiceIdentifierRe.MatchString(identifier) {
-		return fmt.Errorf("identifier contains invalid characters, only alphanumeric, hyphens, and underscores allowed")
+		return stderrors.New("identifier contains invalid characters, only alphanumeric, hyphens, and underscores allowed")
 	}
 
 	// Reasonable length limits
 	if len(identifier) > 64 {
-		return fmt.Errorf("identifier too long, maximum 64 characters")
+		return stderrors.New("identifier too long, maximum 64 characters")
 	}
 
 	if len(identifier) < 2 {
-		return fmt.Errorf("identifier too short, minimum 2 characters")
+		return stderrors.New("identifier too short, minimum 2 characters")
 	}
 
 	return nil

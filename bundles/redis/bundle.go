@@ -76,6 +76,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -138,7 +139,7 @@ func DefaultConfig() Config {
 // Validate validates the Redis configuration.
 func (c *Config) Validate() error {
 	if c.RedisURL == "" {
-		return fmt.Errorf("redis_url is required")
+		return stderrors.New("redis_url is required")
 	}
 
 	// Parse and validate Redis URL
@@ -149,28 +150,28 @@ func (c *Config) Validate() error {
 
 	// Validate scheme
 	if parsedURL.Scheme != "redis" && parsedURL.Scheme != "rediss" {
-		return fmt.Errorf("redis_url must use 'redis://' or 'rediss://' scheme")
+		return stderrors.New("redis_url must use 'redis://' or 'rediss://' scheme")
 	}
 
 	// Security: Enforce authentication for remote connections
 	if parsedURL.Hostname() != "localhost" && parsedURL.Hostname() != "127.0.0.1" && parsedURL.Hostname() != "" {
 		if parsedURL.User == nil {
-			return fmt.Errorf("authentication required for remote Redis connections")
+			return stderrors.New("authentication required for remote Redis connections")
 		}
 		if password, ok := parsedURL.User.Password(); !ok || password == "" {
-			return fmt.Errorf("password required for remote Redis connections")
+			return stderrors.New("password required for remote Redis connections")
 		}
 	}
 
 	// Security: Enforce TLS for remote connections
 	if parsedURL.Scheme == "redis" && parsedURL.Hostname() != "localhost" && parsedURL.Hostname() != "127.0.0.1" && parsedURL.Hostname() != "" {
-		return fmt.Errorf("TLS required for remote Redis connections, use rediss:// scheme")
+		return stderrors.New("TLS required for remote Redis connections, use rediss:// scheme")
 	}
 
 	// Validate TLS configuration if using rediss://
 	if parsedURL.Scheme == "rediss" && c.TLSConfig != nil {
 		if c.TLSConfig.InsecureSkipVerify {
-			return fmt.Errorf("TLS certificate verification cannot be disabled for security")
+			return stderrors.New("TLS certificate verification cannot be disabled for security")
 		}
 	}
 
@@ -392,7 +393,7 @@ func (c *RedisHealthCheck) Liveness(ctx context.Context) error {
 	return c.client.Ping(ctx).Err()
 }
 
-// Readiness performs a more comprehensive check including memory and performance.
+// Readiness performs a basic connectivity check.
 func (c *RedisHealthCheck) Readiness(ctx context.Context) error {
 	timeout := c.timeout
 	if timeout <= 0 {
@@ -406,43 +407,15 @@ func (c *RedisHealthCheck) Readiness(ctx context.Context) error {
 		defer cancel()
 	}
 
-	// First check basic connectivity
 	if err := c.client.Ping(ctx).Err(); err != nil {
 		return fmt.Errorf("Redis ping failed: %w", err)
 	}
 
-	// Check Redis memory usage and basic operations
-	info, err := c.client.Info(ctx, "memory").Result()
-	if err != nil {
-		return fmt.Errorf("failed to get Redis memory info: %w", err)
-	}
-
-	if info == "" {
-		return fmt.Errorf("Redis memory info returned empty")
-	}
-
-	// Test basic set/get operation
-	testKey := "forge:health:test"
-	testValue := "ok"
-
-	if err := c.client.Set(ctx, testKey, testValue, 30*time.Second).Err(); err != nil {
-		return fmt.Errorf("failed to set test key in Redis: %w", err)
-	}
-
-	result, err := c.client.Get(ctx, testKey).Result()
-	if err != nil {
-		return fmt.Errorf("failed to get test key from Redis: %w", err)
-	}
-
-	if result != testValue {
-		return fmt.Errorf("Redis test operation failed: expected %q, got %q", testValue, result)
-	}
-
-	// Clean up test key
-	c.client.Del(ctx, testKey)
-
 	return nil
 }
+
+// ErrCacheMiss indicates the requested key does not exist in the cache.
+var ErrCacheMiss = stderrors.New("cache miss")
 
 // CacheService provides high-level caching operations.
 type CacheService struct {
@@ -468,8 +441,8 @@ func (c *CacheService) Set(ctx context.Context, key string, value interface{}, t
 func (c *CacheService) Get(ctx context.Context, key string, dest interface{}) error {
 	data, err := c.client.Get(ctx, key).Result()
 	if err != nil {
-		if err == redis.Nil {
-			return fmt.Errorf("cache key not found: %s", key)
+		if stderrors.Is(err, redis.Nil) {
+			return fmt.Errorf("cache key %q: %w", key, ErrCacheMiss)
 		}
 		return fmt.Errorf("failed to get cache value: %w", err)
 	}

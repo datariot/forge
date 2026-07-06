@@ -69,6 +69,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net"
@@ -112,7 +113,7 @@ func NewStaticCredentialProvider(apiKey, jwtToken string) *StaticCredentialProvi
 // GetAPIKey returns the static API key.
 func (p *StaticCredentialProvider) GetAPIKey(ctx context.Context) (string, error) {
 	if p.apiKey == "" {
-		return "", fmt.Errorf("no API key configured")
+		return "", stderrors.New("no API key configured")
 	}
 	return p.apiKey, nil
 }
@@ -120,7 +121,7 @@ func (p *StaticCredentialProvider) GetAPIKey(ctx context.Context) (string, error
 // GetJWTToken returns the static JWT token.
 func (p *StaticCredentialProvider) GetJWTToken(ctx context.Context) (string, error) {
 	if p.jwtToken == "" {
-		return "", fmt.Errorf("no JWT token configured")
+		return "", stderrors.New("no JWT token configured")
 	}
 	return p.jwtToken, nil
 }
@@ -264,7 +265,7 @@ func (c *Config) Validate() error {
 
 	// Validate circuit breaker configuration
 	if c.CircuitBreakerConfig.MaxRequests == 0 {
-		return fmt.Errorf("circuit breaker max_requests must be positive")
+		return stderrors.New("circuit breaker max_requests must be positive")
 	}
 	if c.CircuitBreakerConfig.Interval <= 0 {
 		return fmt.Errorf("circuit breaker interval must be positive, got %v", c.CircuitBreakerConfig.Interval)
@@ -473,8 +474,8 @@ func (e *HTTPError) IsRetryableError() bool {
 
 // Common errors
 var (
-	ErrCircuitBreakerOpen = fmt.Errorf("circuit breaker is open")
-	ErrMaxRetriesExceeded = fmt.Errorf("maximum retries exceeded")
+	ErrCircuitBreakerOpen = stderrors.New("circuit breaker is open")
+	ErrMaxRetriesExceeded = stderrors.New("maximum retries exceeded")
 )
 
 // Get performs a GET request and unmarshals the response into dest.
@@ -512,7 +513,7 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 
 	if err != nil {
 		// Check if circuit breaker is open
-		if err == gobreaker.ErrOpenState {
+		if stderrors.Is(err, gobreaker.ErrOpenState) {
 			return ErrCircuitBreakerOpen
 		}
 		return err
@@ -531,9 +532,14 @@ func (c *Client) executeWithRetry(ctx context.Context, method, url string, body 
 	b := backoff.WithContext(c.backoffFactory(), ctx)
 
 	// Retry with backoff
-	err := backoff.Retry(operation, b)
-	if err != nil {
-		return ErrMaxRetriesExceeded
+	lastErr := backoff.Retry(operation, b)
+	if lastErr != nil {
+		// Distinguish context cancellation/deadline from genuine retry exhaustion
+		// so callers can detect cancellation instead of misreading it as exhaustion.
+		if stderrors.Is(lastErr, context.Canceled) || stderrors.Is(lastErr, context.DeadlineExceeded) {
+			return fmt.Errorf("request context ended: %w", lastErr)
+		}
+		return fmt.Errorf("%w: %w", ErrMaxRetriesExceeded, lastErr)
 	}
 
 	return nil
@@ -591,7 +597,8 @@ func (c *Client) executeRequest(ctx context.Context, method, url string, body in
 		}
 
 		// Check if error is retryable
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		var netErr net.Error
+		if stderrors.As(err, &netErr) && netErr.Timeout() {
 			return err // Retryable timeout error
 		}
 		return backoff.Permanent(err) // Non-retryable error
@@ -778,13 +785,13 @@ func (c *Client) addAuthHeaders(ctx context.Context, req *http.Request) error {
 // validateJWTToken performs basic JWT token validation.
 func (c *Client) validateJWTToken(token string) error {
 	if token == "" {
-		return fmt.Errorf("token cannot be empty")
+		return stderrors.New("token cannot be empty")
 	}
 
 	// Basic JWT format validation (header.payload.signature)
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return fmt.Errorf("invalid JWT token format")
+		return stderrors.New("invalid JWT token format")
 	}
 
 	// Additional validation would be performed by JWT bundle
@@ -843,7 +850,7 @@ func (c *Client) RawRequest(ctx context.Context, method, url string, headers map
 	})
 
 	if err != nil {
-		if err == gobreaker.ErrOpenState {
+		if stderrors.Is(err, gobreaker.ErrOpenState) {
 			return nil, ErrCircuitBreakerOpen
 		}
 		return nil, err
@@ -855,7 +862,7 @@ func (c *Client) RawRequest(ctx context.Context, method, url string, headers map
 // HealthCheck performs health checks for the HTTP client.
 func (c *Client) HealthCheck(ctx context.Context, healthURL string) error {
 	if healthURL == "" {
-		return fmt.Errorf("health check URL not configured")
+		return stderrors.New("health check URL not configured")
 	}
 
 	// Perform a simple GET request to health endpoint

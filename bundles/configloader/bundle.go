@@ -83,6 +83,7 @@ package configloader
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"os"
@@ -152,13 +153,13 @@ func DefaultConfig() Config {
 // Validate validates the configuration loader settings.
 func (c *Config) Validate() error {
 	if len(c.ConfigPaths) == 0 {
-		return fmt.Errorf("at least one config path must be specified")
+		return stderrors.New("at least one config path must be specified")
 	}
 
 	// Validate config paths
 	for _, path := range c.ConfigPaths {
 		if path == "" {
-			return fmt.Errorf("config path cannot be empty")
+			return stderrors.New("config path cannot be empty")
 		}
 		if !filepath.IsAbs(path) && !strings.HasPrefix(path, "./") {
 			return fmt.Errorf("config path must be absolute or relative (starting with ./): %s", path)
@@ -296,12 +297,12 @@ type LoadResult struct {
 // Load loads configuration into the provided struct from multiple sources.
 func (l *Loader) Load(dest interface{}) (*LoadResult, error) {
 	if dest == nil {
-		return nil, fmt.Errorf("destination cannot be nil")
+		return nil, stderrors.New("destination cannot be nil")
 	}
 
 	destValue := reflect.ValueOf(dest)
 	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Struct {
-		return nil, fmt.Errorf("destination must be a pointer to a struct")
+		return nil, stderrors.New("destination must be a pointer to a struct")
 	}
 
 	result := &LoadResult{
@@ -570,7 +571,7 @@ func (l *Loader) setFieldValue(field reflect.Value, value string) error {
 				field.Set(reflect.ValueOf(values))
 			}
 		} else {
-			return fmt.Errorf("unsupported slice type for field")
+			return stderrors.New("unsupported slice type for field")
 		}
 	default:
 		return fmt.Errorf("unsupported field type: %s", field.Kind())
@@ -688,7 +689,7 @@ func (l *Loader) OnConfigChange(callback func(interface{})) {
 // StartWatching starts watching configuration files for changes.
 func (b *Bundle) StartWatching(ctx context.Context, dest interface{}) error {
 	if b.watcher == nil {
-		return fmt.Errorf("file watcher not initialized")
+		return stderrors.New("file watcher not initialized")
 	}
 
 	go func() {
@@ -780,14 +781,14 @@ func (l *Loader) Reload(dest interface{}) (*LoadResult, error) {
 // Paths containing ".." traversal sequences are rejected regardless of resolution outcome.
 func (l *Loader) validateFilePath(filename string) error {
 	if filename == "" {
-		return fmt.Errorf("configuration file path cannot be empty")
+		return stderrors.New("configuration file path cannot be empty")
 	}
 
 	// Reject inputs that contain path traversal sequences before any resolution.
 	// filepath.Clean / filepath.Abs would silently resolve "../../../etc/passwd" to
 	// a valid absolute path, making it look legitimate. We block such inputs explicitly.
 	if strings.Contains(filepath.Clean(filename), "..") {
-		return fmt.Errorf("path traversal not allowed in configuration file path")
+		return stderrors.New("path traversal not allowed in configuration file path")
 	}
 
 	// Resolve relative paths to absolute
