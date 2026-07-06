@@ -435,11 +435,6 @@ func TestApp_WithGRPCRegistrar_Nil(t *testing.T) {
 	}
 }
 
-// testRegistrar implements Registrar for testing.
-type testRegistrar struct{}
-
-func (r *testRegistrar) RegisterGRPC(s *grpc.Server) error { return nil }
-
 func TestApp_WithGRPCRegistrar_Valid(t *testing.T) {
 	cfg := config.DefaultBaseConfig()
 	cfg.ServiceName = "test-service"

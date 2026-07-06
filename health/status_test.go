@@ -207,3 +207,45 @@ func TestStatusResponse_HTTPStatus(t *testing.T) {
 type errTest string
 
 func (e errTest) Error() string { return string(e) }
+
+func TestCheckResult_IsHealthy(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   Status
+		expected bool
+	}{
+		{"healthy check result", StatusHealthy, true},
+		{"unhealthy check result", StatusUnhealthy, false},
+		{"unknown check result", StatusUnknown, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := CheckResult{
+				Name:   "test-check",
+				Status: tt.status,
+			}
+
+			if result.IsHealthy() != tt.expected {
+				t.Errorf("Expected IsHealthy() = %v, got %v", tt.expected, result.IsHealthy())
+			}
+		})
+	}
+}
+
+func TestStatusResponse_Creation(t *testing.T) {
+	hs := HealthStatus{
+		Status:  StatusHealthy,
+		Message: "test message",
+	}
+
+	resp := NewStatusResponse(hs)
+
+	if resp.Status != StatusHealthy {
+		t.Errorf("Expected status healthy, got %s", resp.Status)
+	}
+
+	if resp.Message != "test message" {
+		t.Errorf("Expected message 'test message', got %s", resp.Message)
+	}
+}
