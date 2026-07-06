@@ -182,7 +182,7 @@ func getRandomPort() string {
 	if err != nil {
 		return ":0" // Fallback to any port
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	addr := listener.Addr().(*net.TCPAddr)
 	return fmt.Sprintf(":%d", addr.Port)
@@ -221,7 +221,7 @@ func (c *TestHTTPClient) CheckHealth(t *testing.T) {
 	t.Helper()
 
 	resp := c.Get(t, "/health")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("Expected health check to return 200, got %d", resp.StatusCode)

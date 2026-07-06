@@ -334,8 +334,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 
 	// Enforce secure TLS configuration
 	tlsConfig.MinVersion = tls.VersionTLS12 // Require TLS 1.2 minimum
-	tlsConfig.PreferServerCipherSuites = true
-	tlsConfig.InsecureSkipVerify = false // Never skip certificate verification
+	tlsConfig.InsecureSkipVerify = false    // Never skip certificate verification
 
 	// Set secure cipher suites
 	tlsConfig.CipherSuites = []uint16{
@@ -603,7 +602,7 @@ func (c *Client) executeRequest(ctx context.Context, method, url string, body in
 		}
 		return backoff.Permanent(err) // Non-retryable error
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
@@ -873,7 +872,7 @@ func (c *Client) HealthCheck(ctx context.Context, healthURL string) error {
 	if err != nil {
 		return fmt.Errorf("health check request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("health check failed: HTTP %d %s", resp.StatusCode, resp.Status)

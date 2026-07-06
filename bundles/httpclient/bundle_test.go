@@ -107,7 +107,9 @@ func TestBundle_Stop(t *testing.T) {
 	bundle := NewBundle(cfg)
 
 	// Initialize first
-	bundle.Initialize(nil)
+	if err := bundle.Initialize(nil); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
 
 	ctx := context.Background()
 	if err := bundle.Stop(ctx); err != nil {
@@ -439,7 +441,7 @@ func TestClient_Get_Success(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"name":"test"}`))
+		_, _ = w.Write([]byte(`{"name":"test"}`))
 	}))
 	defer server.Close()
 
@@ -457,7 +459,7 @@ func TestClient_Get_Success(t *testing.T) {
 func TestClient_Get_NotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error":"not found"}`))
+		_, _ = w.Write([]byte(`{"error":"not found"}`))
 	}))
 	defer server.Close()
 
@@ -477,7 +479,7 @@ func TestClient_Post_Success(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{"id":"123"}`))
+		_, _ = w.Write([]byte(`{"id":"123"}`))
 	}))
 	defer server.Close()
 
@@ -525,7 +527,7 @@ func TestClient_RawRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
@@ -569,7 +571,7 @@ func TestClient_Put_Success(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"updated":true}`))
+		_, _ = w.Write([]byte(`{"updated":true}`))
 	}))
 	defer server.Close()
 

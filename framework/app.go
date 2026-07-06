@@ -498,13 +498,11 @@ func (a *App) Run(ctx context.Context) error {
 	signalCtx, signalCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer signalCancel()
 
-	select {
-	case <-signalCtx.Done():
-		if ctx.Err() != nil {
-			logger.Info().Msg("Context cancelled")
-		} else {
-			logger.Info().Msg("Received shutdown signal")
-		}
+	<-signalCtx.Done()
+	if ctx.Err() != nil {
+		logger.Info().Msg("Context cancelled")
+	} else {
+		logger.Info().Msg("Received shutdown signal")
 	}
 
 	// Shutdown the application
@@ -866,9 +864,9 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status.HTTPStatus())
 
 	if data, err := status.JSON(); err == nil {
-		w.Write(data)
+		_, _ = w.Write(data)
 	} else {
-		w.Write([]byte(`{"status":"error","message":"failed to serialize health status"}`))
+		_, _ = w.Write([]byte(`{"status":"error","message":"failed to serialize health status"}`))
 	}
 }
 
@@ -881,9 +879,9 @@ func (a *App) handleReady(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status.HTTPStatus())
 
 	if data, err := status.JSON(); err == nil {
-		w.Write(data)
+		_, _ = w.Write(data)
 	} else {
-		w.Write([]byte(`{"status":"error","message":"failed to serialize readiness status"}`))
+		_, _ = w.Write([]byte(`{"status":"error","message":"failed to serialize readiness status"}`))
 	}
 }
 
@@ -896,9 +894,9 @@ func (a *App) handleLive(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status.HTTPStatus())
 
 	if data, err := status.JSON(); err == nil {
-		w.Write(data)
+		_, _ = w.Write(data)
 	} else {
-		w.Write([]byte(`{"status":"error","message":"failed to serialize liveness status"}`))
+		_, _ = w.Write([]byte(`{"status":"error","message":"failed to serialize liveness status"}`))
 	}
 }
 

@@ -176,7 +176,6 @@ type Bundle struct {
 	watcher      *fsnotify.Watcher
 	watchedFiles []string
 	logger       zerolog.Logger
-	mu           sync.RWMutex
 }
 
 // NewBundle creates a new configuration loading bundle.
@@ -242,7 +241,9 @@ func (b *Bundle) Stop(ctx context.Context) error {
 		return err
 	case <-ctx.Done():
 		// Force close after timeout
-		b.watcher.Close()
+		if closeErr := b.watcher.Close(); closeErr != nil {
+			b.logger.Error().Err(closeErr).Msg("failed to force-close config watcher")
+		}
 		return fmt.Errorf("config watcher close timed out: %w", ctx.Err())
 	}
 }
@@ -301,7 +302,7 @@ func (l *Loader) Load(dest interface{}) (*LoadResult, error) {
 	}
 
 	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Struct {
+	if destValue.Kind() != reflect.Pointer || destValue.Elem().Kind() != reflect.Struct {
 		return nil, stderrors.New("destination must be a pointer to a struct")
 	}
 
@@ -395,7 +396,7 @@ func (l *Loader) loadFromFile(filename string, dest interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to open config file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Use io.LimitReader to enforce size limits
 	limitedReader := io.LimitReader(file, l.config.MaxFileSize)

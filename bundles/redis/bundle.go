@@ -291,7 +291,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 	defer cancel()
 
 	if err := b.client.Ping(ctx).Err(); err != nil {
-		b.client.Close()
+		_ = b.client.Close()
 		return errors.ErrRepositoryUnavailable.WithMessage(
 			"failed to connect to Redis at %s", b.config.SanitizedRedisURL(),
 		).WithCause(err)
@@ -338,7 +338,9 @@ func (b *Bundle) Stop(ctx context.Context) error {
 		return err
 	case <-ctx.Done():
 		// Force close after timeout
-		b.client.Close()
+		if closeErr := b.client.Close(); closeErr != nil {
+			return fmt.Errorf("redis connection close timed out: %w (close error: %w)", ctx.Err(), closeErr)
+		}
 		return fmt.Errorf("redis connection close timed out: %w", ctx.Err())
 	}
 }
@@ -408,7 +410,7 @@ func (c *RedisHealthCheck) Readiness(ctx context.Context) error {
 	}
 
 	if err := c.client.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("Redis ping failed: %w", err)
+		return fmt.Errorf("redis ping failed: %w", err)
 	}
 
 	return nil

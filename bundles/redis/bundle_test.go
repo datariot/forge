@@ -23,11 +23,11 @@ func newLiveTestClient(t *testing.T) goredis.UniversalClient {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		client.Close()
+		_ = client.Close()
 		t.Skipf("skipping: no Redis available at localhost:6379: %v", err)
 	}
 
-	t.Cleanup(func() { client.Close() })
+	t.Cleanup(func() { _ = client.Close() })
 	return client
 }
 

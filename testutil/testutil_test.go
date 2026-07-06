@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -30,14 +31,14 @@ func TestNewTestComponent(t *testing.T) {
 func TestTestComponent_StartStop(t *testing.T) {
 	comp := NewTestComponent("test")
 
-	if err := comp.Start(nil); err != nil {
+	if err := comp.Start(context.TODO()); err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
 	if !comp.StartCalled {
 		t.Error("StartCalled should be true after Start()")
 	}
 
-	if err := comp.Stop(nil); err != nil {
+	if err := comp.Stop(context.TODO()); err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
 	if !comp.StopCalled {
@@ -49,7 +50,7 @@ func TestTestComponent_StartError(t *testing.T) {
 	comp := NewTestComponent("test")
 	comp.StartError = errors.New("start failed")
 
-	if err := comp.Start(nil); err == nil {
+	if err := comp.Start(context.TODO()); err == nil {
 		t.Error("expected error from Start(), got nil")
 	}
 }
@@ -58,7 +59,7 @@ func TestTestComponent_StopError(t *testing.T) {
 	comp := NewTestComponent("test")
 	comp.StopError = errors.New("stop failed")
 
-	if err := comp.Stop(nil); err == nil {
+	if err := comp.Stop(context.TODO()); err == nil {
 		t.Error("expected error from Stop(), got nil")
 	}
 }
@@ -83,7 +84,7 @@ func TestTestBundle_InitializeStop(t *testing.T) {
 		t.Error("InitCalled should be true after Initialize()")
 	}
 
-	if err := bundle.Stop(nil); err != nil {
+	if err := bundle.Stop(context.TODO()); err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
 	if !bundle.StopCalled {
@@ -144,7 +145,7 @@ func TestNewTestServer(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
 	server := NewTestServer(handler)
@@ -167,7 +168,7 @@ func TestTestHTTPClient_Get(t *testing.T) {
 
 	client := NewTestHTTPClient(testServer.URL)
 	resp := client.Get(t, "/")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
@@ -178,7 +179,7 @@ func TestTestHTTPClient_CheckHealth(t *testing.T) {
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"healthy"}`))
+		_, _ = w.Write([]byte(`{"status":"healthy"}`))
 	}))
 	defer testServer.Close()
 

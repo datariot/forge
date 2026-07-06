@@ -67,7 +67,9 @@ func TestRegistry_Unregister(t *testing.T) {
 	check := NewAlwaysHealthyCheck("test-check")
 	config := DefaultCheckConfig("test-check")
 
-	registry.Register(check, config)
+	if err := registry.Register(check, config); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 	registry.Unregister("test-check")
 
 	// Should be able to re-register after unregister
@@ -100,7 +102,9 @@ func TestRegistry_CheckLiveness(t *testing.T) {
 	registry := NewRegistry(nil)
 
 	healthyCheck := NewAlwaysHealthyCheck("healthy-check")
-	registry.Register(healthyCheck, DefaultCheckConfig("healthy-check"))
+	if err := registry.Register(healthyCheck, DefaultCheckConfig("healthy-check")); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckLiveness(ctx)
@@ -126,7 +130,9 @@ func TestRegistry_CheckLiveness_FailingCheck(t *testing.T) {
 	config := DefaultCheckConfig("failing-check")
 	config.Required = true
 
-	registry.Register(failingCheck, config)
+	if err := registry.Register(failingCheck, config); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckLiveness(ctx)
@@ -152,7 +158,9 @@ func TestRegistry_CheckLiveness_OptionalFailingCheck(t *testing.T) {
 	config := DefaultCheckConfig("optional-failing")
 	config.Required = false
 
-	registry.Register(failingCheck, config)
+	if err := registry.Register(failingCheck, config); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckLiveness(ctx)
@@ -176,7 +184,9 @@ func TestRegistry_CheckReadiness(t *testing.T) {
 	registry.SetReady(true)
 
 	healthyCheck := NewAlwaysHealthyCheck("healthy-check")
-	registry.Register(healthyCheck, DefaultCheckConfig("healthy-check"))
+	if err := registry.Register(healthyCheck, DefaultCheckConfig("healthy-check")); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckReadiness(ctx)
@@ -196,7 +206,9 @@ func TestRegistry_CheckReadiness_NotMarkedReady(t *testing.T) {
 	// Don't call SetReady(true)
 
 	healthyCheck := NewAlwaysHealthyCheck("healthy-check")
-	registry.Register(healthyCheck, DefaultCheckConfig("healthy-check"))
+	if err := registry.Register(healthyCheck, DefaultCheckConfig("healthy-check")); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckReadiness(ctx)
@@ -216,7 +228,9 @@ func TestRegistry_CheckHealth(t *testing.T) {
 	registry.SetReady(true)
 
 	healthyCheck := NewAlwaysHealthyCheck("healthy-check")
-	registry.Register(healthyCheck, DefaultCheckConfig("healthy-check"))
+	if err := registry.Register(healthyCheck, DefaultCheckConfig("healthy-check")); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckHealth(ctx)
@@ -237,7 +251,9 @@ func TestRegistry_ConcurrentChecks(t *testing.T) {
 			name:  "slow-check-" + string(rune('A'+i)),
 			delay: 100 * time.Millisecond,
 		}
-		registry.Register(check, DefaultCheckConfig(check.name))
+		if err := registry.Register(check, DefaultCheckConfig(check.name)); err != nil {
+			t.Fatalf("Failed to register check: %v", err)
+		}
 	}
 
 	ctx := context.Background()
@@ -271,7 +287,9 @@ func TestRegistry_CheckTimeout(t *testing.T) {
 	config := DefaultCheckConfig("very-slow-check")
 	config.Required = true
 
-	registry.Register(slowCheck, config)
+	if err := registry.Register(slowCheck, config); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	// Use context timeout to control check duration
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -296,10 +314,12 @@ func TestRegistry_MixedChecks(t *testing.T) {
 	registry.SetReady(true)
 
 	// Required healthy check
-	registry.Register(
+	if err := registry.Register(
 		NewAlwaysHealthyCheck("required-healthy"),
 		DefaultCheckConfig("required-healthy"),
-	)
+	); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	// Optional failing check
 	failingCheck := &testCheck{
@@ -309,7 +329,9 @@ func TestRegistry_MixedChecks(t *testing.T) {
 	}
 	failingConfig := DefaultCheckConfig("optional-failing")
 	failingConfig.Required = false
-	registry.Register(failingCheck, failingConfig)
+	if err := registry.Register(failingCheck, failingConfig); err != nil {
+		t.Fatalf("Failed to register check: %v", err)
+	}
 
 	ctx := context.Background()
 	status := registry.CheckLiveness(ctx)

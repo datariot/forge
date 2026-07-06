@@ -665,12 +665,12 @@ func TestLoadFromFile_RelativePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("os.CreateTemp: %v", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 
 	if _, err := tmp.WriteString("key: value\n"); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	tmp.Close()
+	_ = tmp.Close()
 
 	// Chmod to 0644 to satisfy RequiredFileMode default.
 	if err := os.Chmod(tmp.Name(), 0o644); err != nil {

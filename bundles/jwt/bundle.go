@@ -267,17 +267,17 @@ func (b *Bundle) validateClaims(claims *ServiceClaims) error {
 	now := time.Now()
 
 	// Check expiration with clock skew
-	if claims.ExpiresAt != nil && now.After(claims.ExpiresAt.Time.Add(b.config.ClockSkew)) {
+	if claims.ExpiresAt != nil && now.After(claims.ExpiresAt.Add(b.config.ClockSkew)) {
 		return errors.ErrInvalidCredential.WithMessage("token has expired")
 	}
 
 	// Check not before with clock skew (subtract clock skew to be more permissive)
-	if claims.NotBefore != nil && now.Before(claims.NotBefore.Time.Add(-b.config.ClockSkew)) {
+	if claims.NotBefore != nil && now.Before(claims.NotBefore.Add(-b.config.ClockSkew)) {
 		return errors.ErrInvalidCredential.WithMessage("token not yet valid")
 	}
 
 	// Validate audience
-	if claims.Audience == nil || len(claims.Audience) == 0 {
+	if len(claims.Audience) == 0 {
 		return errors.ErrInvalidCredential.WithMessage("token missing audience")
 	}
 

@@ -133,7 +133,7 @@ func TestResponseWriter_Write_PreservesExistingStatus(t *testing.T) {
 	rec := httptest.NewRecorder()
 	rw := &responseWriter{ResponseWriter: rec, statusCode: http.StatusCreated}
 
-	rw.Write([]byte("data"))
+	_, _ = rw.Write([]byte("data"))
 	if rw.statusCode != http.StatusCreated {
 		t.Errorf("expected status 201 preserved, got %d", rw.statusCode)
 	}
