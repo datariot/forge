@@ -89,12 +89,12 @@ go run main.go
 ```
 
 Your service will start with:
-- **gRPC server** on `:8080`
 - **HTTP health endpoints** on `:8081`
   - `http://localhost:8081/health` - Overall health
   - `http://localhost:8081/health/ready` - Readiness probe
   - `http://localhost:8081/health/live` - Liveness probe
-  - `http://localhost:8081/metrics` - Prometheus metrics
+  - `http://localhost:8081/metrics` - Prometheus metrics (when the prometheus bundle is added)
+- **gRPC server** on `:8080` — started only when you register a gRPC service with `framework.WithGRPCRegistrar(...)`. The example above is HTTP-only, so no gRPC server runs.
 
 ## Adding Database Connectivity
 
@@ -178,7 +178,9 @@ func main() {
     app, err := framework.New(
         framework.WithConfig(&cfg),
         framework.WithBundle(jwtBundle), // Add authentication
+        // Register BOTH interceptors — the unary one does not cover streaming RPCs.
         framework.WithUnaryInterceptor(jwtBundle.UnaryServerInterceptor()),
+        framework.WithStreamInterceptor(jwtBundle.StreamServerInterceptor()),
         framework.WithComponent(service),
     )
 }
@@ -214,8 +216,8 @@ go run main.go
 ## Next Steps
 
 - **[Explore Bundles](bundles.html)** - Learn about available integrations
-- **[View Examples](examples.html)** - See complete working examples
-- **[API Reference](api-reference.html)** - Detailed API documentation
+- **[View Examples](https://github.com/datariot/forge/tree/main/examples)** - Complete working services
+- **[API Reference](https://pkg.go.dev/github.com/datariot/forge)** - Full godoc on pkg.go.dev
 
 ## Key Concepts
 
@@ -238,6 +240,7 @@ Bundles are pre-built integrations that add functionality to your application:
 type Bundle interface {
     Name() string
     Initialize(app *App) error
+    Stop(ctx context.Context) error
 }
 ```
 

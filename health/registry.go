@@ -82,9 +82,16 @@ type Logger interface {
 // NoopLogger is a logger that does nothing.
 type NoopLogger struct{}
 
+// Debug discards a debug-level message.
 func (NoopLogger) Debug(msg string, fields ...any) {}
-func (NoopLogger) Info(msg string, fields ...any)  {}
-func (NoopLogger) Warn(msg string, fields ...any)  {}
+
+// Info discards an info-level message.
+func (NoopLogger) Info(msg string, fields ...any) {}
+
+// Warn discards a warning-level message.
+func (NoopLogger) Warn(msg string, fields ...any) {}
+
+// Error discards an error-level message.
 func (NoopLogger) Error(msg string, fields ...any) {}
 
 // NewRegistry creates a new health check registry.

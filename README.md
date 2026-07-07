@@ -1,22 +1,50 @@
 # Forge
 
-A batteries-included Go framework for building production-ready microservices.
+[![CI](https://github.com/datariot/forge/actions/workflows/test.yml/badge.svg)](https://github.com/datariot/forge/actions/workflows/test.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/datariot/forge.svg)](https://pkg.go.dev/github.com/datariot/forge)
+[![Go Report Card](https://goreportcard.com/badge/github.com/datariot/forge)](https://goreportcard.com/report/github.com/datariot/forge)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Go 1.25+](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)
 
-## Overview
+A batteries-included Go framework for building production-ready microservices — inspired by DropWizard, designed for Go's strengths.
 
-Forge is inspired by DropWizard but designed specifically for Go's strengths - interfaces, goroutines, and clean composition. It provides opinionated defaults while maintaining flexibility through a pluggable architecture.
+Forge wires up the boilerplate every service re-implements — lifecycle orchestration, health checks, structured logging, tracing, metrics, graceful shutdown — behind a small, composable API, so you write business logic instead of plumbing.
 
-## Features
+```go
+app, err := framework.New(
+    framework.WithConfig(&cfg),
+    framework.WithComponent(myService),
+    framework.WithBundle(postgresql.NewBundle(dbConfig)),
+)
+if err != nil {
+    log.Fatal(err)
+}
+log.Fatal(app.Run(context.Background()))
+```
 
-- **Clean Architecture**: Component-based design with clear separation of concerns
-- **Observability Built-in**: OpenTelemetry tracing, structured logging, Prometheus metrics
-- **Health Checks**: Comprehensive liveness and readiness checks
-- **Graceful Lifecycle**: Sophisticated startup and shutdown orchestration
-- **Configuration Management**: Validated config with YAML + env overrides via the configloader bundle
-- **Database Integration**: PostgreSQL connection pooling with health checks
-- **Redis Integration**: Caching, pub/sub, distributed locks, and rate limiting
-- **Resilient HTTP Client**: Circuit breaker, retries, and backoff built in
-- **Security First**: No hardcoded credentials, explicit validation requirements
+## Why Forge
+
+**Use Forge when** you're running more than one Go service and are tired of copy-pasting the same `main.go` — the health endpoints, the OTel setup, the signal handling, the "did I remember to drain connections on shutdown" checklist. Forge gives you opinionated, production-grade defaults for all of it and a bundle system to add PostgreSQL, Redis, JWT auth, a resilient HTTP client, and Prometheus metrics with one line each.
+
+**What you get out of the box:**
+
+- **Lifecycle orchestration** — ordered startup, reverse-order graceful shutdown, timeout handling, and startup/shutdown hooks.
+- **Health checks** — Kubernetes-style `/health`, `/health/ready`, `/health/live` plus a gRPC health service, run on a background schedule and cached so a slow dependency can't stall your probes.
+- **Observability** — OpenTelemetry tracing (W3C propagation, configurable sampling), structured JSON logging via zerolog, and automatic HTTP/gRPC request metrics when the Prometheus bundle is added.
+- **Bundles** — PostgreSQL (pooled, via pgx), Redis (cache, pub/sub, distributed locks, rate limiting), JWT service auth (unary + stream interceptors), a circuit-breaking HTTP client, Prometheus, and multi-source config loading with hot reload.
+- **Config with validation** — a common `BaseConfig` with environment-aware defaults; layer YAML files and environment overrides via the configloader bundle.
+
+**Forge is probably not for you if** you want a full web framework with routing, middleware, and an ORM (reach for Echo/Gin/Fiber + your data layer), or if your service is a single small binary where the framework's structure is more than you need. Forge is opinionated about *operability*, not about how you write handlers.
+
+**Status:** pre-1.0. The API is settling and may still change between minor versions; pin your dependency and read the [CHANGELOG](CHANGELOG.md) before upgrading.
+
+## Install
+
+```bash
+go get github.com/datariot/forge
+```
+
+Requires Go 1.25+.
 
 ## Quick Start
 
@@ -27,137 +55,89 @@ import (
     "context"
     "log"
 
-    "github.com/datariot/forge/bundles/postgresql"
     "github.com/datariot/forge/config"
     "github.com/datariot/forge/framework"
+    "github.com/datariot/forge/health"
 )
+
+type Greeter struct{}
+
+func (Greeter) Start(ctx context.Context) error { log.Println("greeter up"); return nil }
+func (Greeter) Stop(ctx context.Context) error  { log.Println("greeter down"); return nil }
+
+func (Greeter) HealthChecks() []health.Check {
+    return []health.Check{health.NewAlwaysHealthyCheck("greeter")}
+}
 
 func main() {
     cfg := config.DefaultBaseConfig()
-    cfg.ServiceName = "my-service"
+    cfg.ServiceName = "greeter"
 
-    pgConfig := postgresql.DefaultConfig()
-    pgConfig.DatabaseURL = "postgres://user:pass@localhost:5432/mydb"
-
+    svc := Greeter{}
     app, err := framework.New(
         framework.WithConfig(&cfg),
         framework.WithVersion("1.0.0"),
-        framework.WithComponent(NewMyComponent(&cfg)),
-        framework.WithBundle(postgresql.NewBundle(pgConfig)),
+        framework.WithComponent(svc),
+        framework.WithHealthContributor(svc),
     )
     if err != nil {
         log.Fatal(err)
     }
 
+    // Run blocks until SIGINT/SIGTERM, then shuts down gracefully.
     if err := app.Run(context.Background()); err != nil {
         log.Fatal(err)
     }
 }
 ```
 
-## Installation
+Run it, then hit the health endpoints on the HTTP server (`:8081` by default):
 
 ```bash
-go get github.com/datariot/forge
+curl localhost:8081/health        # overall status
+curl localhost:8081/health/ready  # readiness probe
+curl localhost:8081/health/live   # liveness probe
 ```
 
-## Development
+The gRPC server (`:8080` by default) starts only when you register a gRPC service with `framework.WithGRPCRegistrar(...)`, so an HTTP-only service like the one above runs without it.
 
-### Prerequisites
+See [`examples/`](examples/) for complete services using each bundle, and the [Getting Started guide](docs/getting-started.md) for a step-by-step walkthrough.
 
-- Go 1.25+
-- Docker & Docker Compose (for integration tests)
-- [Task](https://taskfile.dev) (optional, for task runner)
+## Bundles
 
-### Common Commands
+Add a bundle with `framework.WithBundle(...)`; it self-initializes during startup, contributes its own health checks, and cleans up on shutdown.
 
-```bash
-# Run tests
-task test
-# OR
-go test ./...
+| Bundle | What it provides |
+|--------|------------------|
+| `bundles/postgresql` | Pooled `database/sql` access via pgx, with a readiness check |
+| `bundles/redis` | Cache, pub/sub, distributed locks, sliding-window rate limiting |
+| `bundles/jwt` | Service-to-service auth with gRPC unary + stream interceptors and HTTP middleware |
+| `bundles/httpclient` | HTTP client with circuit breaker, retries, backoff, and an optional host allowlist |
+| `bundles/prometheus` | Metrics registry and **automatic** HTTP/gRPC request metrics |
+| `bundles/configloader` | YAML + environment config loading with validation and hot reload |
 
-# Run tests with coverage
-task test:coverage
-
-# Run integration tests (requires Docker)
-task test:integration
-
-# Build framework and examples
-task build:all
-
-# Format and lint code
-task lint
-
-# See all available tasks
-task --list
-```
-
-### Testing
-
-**Unit Tests** (no external dependencies):
-```bash
-task test
-```
-
-**Integration Tests** (requires Docker):
-```bash
-task docker:up           # Start PostgreSQL + Redis
-task test:integration    # Run integration tests
-task docker:down         # Stop services
-```
-
-**Coverage Report**:
-```bash
-task test:coverage       # Generates coverage.html
-```
-
-Current test coverage: **70.0%** (Target: 70%+)
-
-See [TESTING.md](TESTING.md) for comprehensive testing strategy.
-
-## Architecture
-
-Forge follows Clean Architecture principles:
-
-- **Framework**: Core application lifecycle and interfaces
-- **Bundles**: Pre-built integrations (PostgreSQL, Redis, JWT, HTTP client, Prometheus, configloader)
-- **Components**: Your business logic implementing framework interfaces
-- **Config**: Common service configuration with validation
+Full reference: [pkg.go.dev/github.com/datariot/forge](https://pkg.go.dev/github.com/datariot/forge).
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md)
-- [API Reference](docs/api-reference.md)
-- [Bundles Guide](docs/bundles.md)
-- [Examples](examples/)
-- [Development Guide](CLAUDE.md)
+- [Getting Started](docs/getting-started.md) — build your first service step by step
+- [Bundles Guide](docs/bundles.md) — configuring and using each integration
+- [API Reference](https://pkg.go.dev/github.com/datariot/forge) — full godoc on pkg.go.dev
+- [Examples](examples/) — runnable services
+- [Contributing](CONTRIBUTING.md) — dev setup and PR workflow
 
-## CI/CD
+## Development
 
-GitHub Actions automatically runs on all PRs:
-- Unit tests with race detection
-- Code formatting checks
-- Linting (go vet + golangci-lint)
-- Build verification (framework + examples)
-- Coverage reporting (70% threshold)
+```bash
+task test           # unit tests (race-enabled)
+task test:coverage  # coverage report
+task lint           # gofmt check + go vet + golangci-lint
+task build:all      # framework + examples
+task --list         # everything else
+```
 
-See [.github/workflows/test.yml](.github/workflows/test.yml) for details.
+`go test ./...` and `go build ./...` work without Task if you prefer. Integration tests (PostgreSQL + Redis) run under `task test:integration` and require Docker. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for your changes
-4. Ensure `task ci` passes
-5. Submit a pull request
-
-All contributions must:
-- Include tests (maintain 70%+ coverage)
-- Follow Go best practices
-- Include documentation
-- Pass CI/CD checks
+MIT — see [LICENSE](LICENSE).

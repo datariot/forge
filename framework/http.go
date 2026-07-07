@@ -1,14 +1,14 @@
-// Package framework HTTP server enhancements provide production-ready HTTP endpoints.
-//
-// The enhanced HTTP server includes:
+// The HTTP server built by HTTPServerBuilder is the production-ready HTTP
+// endpoint layer every Forge service gets automatically. It provides:
 //   - Health endpoints (/health, /health/ready, /health/live)
-//   - Metrics endpoint (/metrics) with Prometheus integration
+//   - A metrics endpoint (/metrics) with Prometheus integration
 //   - Debug endpoints (/debug/pprof/*) when enabled
 //   - Request logging middleware
 //   - CORS support with configuration
-//   - Graceful shutdown handling
+//   - Graceful shutdown handling via the http.Server built by Build
 //
-// All endpoints are configurable and can be enabled/disabled based on environment.
+// All endpoints are configurable via HTTPServerConfig and can be enabled or
+// disabled based on environment.
 
 package framework
 
