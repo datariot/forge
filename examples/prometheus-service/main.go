@@ -260,7 +260,7 @@ func (s *MetricsService) handleGetUsers(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"users":     users,
 		"cache_hit": cacheHit,
 		"timestamp": time.Now().UTC(),
@@ -284,7 +284,7 @@ func (s *MetricsService) handleCreateUser(w http.ResponseWriter, r *http.Request
 	s.userOperations.WithLabelValues("create", "success").Inc()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"user":      user,
 		"created":   true,
 		"timestamp": time.Now().UTC(),
@@ -326,7 +326,7 @@ func (s *MetricsService) handleSimulateSlow(w http.ResponseWriter, r *http.Reque
 	s.prometheusBundle.RecordHTTPRequest(r.Method, endpoint, 200, duration)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"message":   "Slow operation completed",
 		"delay":     delay.String(),
 		"duration":  duration.String(),
@@ -336,7 +336,7 @@ func (s *MetricsService) handleSimulateSlow(w http.ResponseWriter, r *http.Reque
 
 // handleMetricsInfo provides information about available metrics.
 func (s *MetricsService) handleMetricsInfo(w http.ResponseWriter, r *http.Request) {
-	info := map[string]interface{}{
+	info := map[string]any{
 		"service":          s.config.ServiceName,
 		"namespace":        s.config.MetricsNamespace,
 		"subsystem":        s.config.MetricsSubsystem,
@@ -392,7 +392,7 @@ func (s *MetricsService) handleUpdateMetrics(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"updated":   true,
 		"message":   "Metrics updated with random values",
 		"timestamp": time.Now().UTC(),

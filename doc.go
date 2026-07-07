@@ -68,7 +68,7 @@
 //   - framework: Core application lifecycle and interfaces
 //   - config: Environment-based configuration management
 //   - health: Kubernetes-compatible health check system
-//   - errors: Structured error handling with classification
+//   - forgeerrors: Structured error handling with classification
 //
 // # HTTP Endpoints
 //

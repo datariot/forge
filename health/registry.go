@@ -73,19 +73,19 @@ type Registry struct {
 
 // Logger interface for health check logging.
 type Logger interface {
-	Debug(msg string, fields ...interface{})
-	Info(msg string, fields ...interface{})
-	Warn(msg string, fields ...interface{})
-	Error(msg string, fields ...interface{})
+	Debug(msg string, fields ...any)
+	Info(msg string, fields ...any)
+	Warn(msg string, fields ...any)
+	Error(msg string, fields ...any)
 }
 
 // NoopLogger is a logger that does nothing.
 type NoopLogger struct{}
 
-func (NoopLogger) Debug(msg string, fields ...interface{}) {}
-func (NoopLogger) Info(msg string, fields ...interface{})  {}
-func (NoopLogger) Warn(msg string, fields ...interface{})  {}
-func (NoopLogger) Error(msg string, fields ...interface{}) {}
+func (NoopLogger) Debug(msg string, fields ...any) {}
+func (NoopLogger) Info(msg string, fields ...any)  {}
+func (NoopLogger) Warn(msg string, fields ...any)  {}
+func (NoopLogger) Error(msg string, fields ...any) {}
 
 // NewRegistry creates a new health check registry.
 func NewRegistry(logger Logger) *Registry {
@@ -341,7 +341,7 @@ func (r *Registry) executeOne(parent context.Context, timeout time.Duration, nam
 //
 // If the background runner is active, this serves the latest cached
 // results instead of computing them live.
-func (r *Registry) CheckLiveness(ctx context.Context) HealthStatus {
+func (r *Registry) CheckLiveness(ctx context.Context) Report {
 	r.mu.RLock()
 	if r.started {
 		status := r.snapshotStatus(probeLiveness)
@@ -363,7 +363,7 @@ func (r *Registry) CheckLiveness(ctx context.Context) HealthStatus {
 //
 // If the background runner is active, this serves the latest cached
 // results instead of computing them live.
-func (r *Registry) CheckReadiness(ctx context.Context) HealthStatus {
+func (r *Registry) CheckReadiness(ctx context.Context) Report {
 	r.mu.RLock()
 	if r.started {
 		status := r.snapshotStatus(probeReadiness)
@@ -386,7 +386,7 @@ func (r *Registry) CheckReadiness(ctx context.Context) HealthStatus {
 
 // applyReadyGate forces status to unhealthy when the service hasn't been
 // explicitly marked ready, regardless of individual check results.
-func applyReadyGate(status HealthStatus, ready bool) HealthStatus {
+func applyReadyGate(status Report, ready bool) Report {
 	if !ready {
 		status.Status = StatusUnhealthy
 		status.Message = "Service not marked as ready"
@@ -399,7 +399,7 @@ func applyReadyGate(status HealthStatus, ready bool) HealthStatus {
 // When the background runner is active, both sides are built from a single
 // cached snapshot (one lock acquisition) rather than two serialized live
 // rounds of every check.
-func (r *Registry) CheckHealth(ctx context.Context) HealthStatus {
+func (r *Registry) CheckHealth(ctx context.Context) Report {
 	r.mu.RLock()
 	if r.started {
 		liveness := r.snapshotStatus(probeLiveness)
@@ -414,10 +414,10 @@ func (r *Registry) CheckHealth(ctx context.Context) HealthStatus {
 	return combineHealth(liveness, readiness)
 }
 
-// combineHealth merges a liveness and a readiness HealthStatus into the
+// combineHealth merges a liveness and a readiness Report into the
 // combined status returned by CheckHealth.
-func combineHealth(liveness, readiness HealthStatus) HealthStatus {
-	status := HealthStatus{
+func combineHealth(liveness, readiness Report) Report {
+	status := Report{
 		Status:    StatusHealthy,
 		Message:   "All checks passed",
 		Timestamp: time.Now().UTC(),
@@ -444,16 +444,16 @@ func combineHealth(liveness, readiness HealthStatus) HealthStatus {
 	return status
 }
 
-// snapshotStatus builds a HealthStatus from the cached background results
+// snapshotStatus builds a Report from the cached background results
 // for the given probe kind. Callers must hold at least r.mu.RLock.
 //
 // A check that the background runner hasn't completed a round for yet is
 // reported as pending (StatusUnknown), which counts as failing for a
 // required check - this is what keeps a pod from being reported ready
 // before its first real check has run.
-func (r *Registry) snapshotStatus(kind *probeKind) HealthStatus {
+func (r *Registry) snapshotStatus(kind *probeKind) Report {
 	if len(r.checks) == 0 {
-		return HealthStatus{
+		return Report{
 			Status:    StatusHealthy,
 			Message:   "No health checks registered",
 			Timestamp: time.Now().UTC(),
@@ -496,7 +496,7 @@ func (r *Registry) snapshotStatus(kind *probeKind) HealthStatus {
 		message = "One or more required checks failed"
 	}
 
-	return HealthStatus{
+	return Report{
 		Status:    status,
 		Message:   message,
 		Timestamp: time.Now().UTC(),
@@ -507,9 +507,9 @@ func (r *Registry) snapshotStatus(kind *probeKind) HealthStatus {
 // performChecks executes health checks live and returns aggregated results.
 // This is the fallback path used when the background runner has not been
 // started (unit tests, direct library use without Start).
-func (r *Registry) performChecks(ctx context.Context, checks map[string]Check, configs map[string]CheckConfig, kind *probeKind) HealthStatus {
+func (r *Registry) performChecks(ctx context.Context, checks map[string]Check, configs map[string]CheckConfig, kind *probeKind) Report {
 	if len(checks) == 0 {
-		return HealthStatus{
+		return Report{
 			Status:    StatusHealthy,
 			Message:   "No health checks registered",
 			Timestamp: time.Now().UTC(),
@@ -560,7 +560,7 @@ func (r *Registry) performChecks(ctx context.Context, checks map[string]Check, c
 		message = "One or more required checks failed"
 	}
 
-	return HealthStatus{
+	return Report{
 		Status:    status,
 		Message:   message,
 		Timestamp: time.Now().UTC(),
@@ -568,8 +568,8 @@ func (r *Registry) performChecks(ctx context.Context, checks map[string]Check, c
 	}
 }
 
-// GetRegisteredChecks returns the names of all registered checks.
-func (r *Registry) GetRegisteredChecks() []string {
+// RegisteredChecks returns the names of all registered checks.
+func (r *Registry) RegisteredChecks() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -580,8 +580,8 @@ func (r *Registry) GetRegisteredChecks() []string {
 	return names
 }
 
-// GetCheckConfig returns the configuration for a specific check.
-func (r *Registry) GetCheckConfig(name string) (CheckConfig, bool) {
+// CheckConfig returns the configuration for a specific check.
+func (r *Registry) CheckConfig(name string) (CheckConfig, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

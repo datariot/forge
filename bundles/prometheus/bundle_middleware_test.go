@@ -83,7 +83,7 @@ func TestBundle_Initialize_WiresAutomaticGRPCMetrics(t *testing.T) {
 	// Invoke the interceptor directly with a fake handler + UnaryServerInfo,
 	// mirroring how grpc.ChainUnaryInterceptor would call it for a real RPC.
 	interceptor := b.UnaryServerInterceptor()
-	fakeHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	fakeHandler := func(ctx context.Context, req any) (any, error) {
 		return "ok", nil
 	}
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}
@@ -112,7 +112,7 @@ func TestBundle_UnaryServerInterceptor_RecordsOKStatus(t *testing.T) {
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Get"}
 
 	_, err := interceptor(context.Background(), nil, info,
-		func(ctx context.Context, req interface{}) (interface{}, error) {
+		func(ctx context.Context, req any) (any, error) {
 			return nil, nil
 		})
 	if err != nil {
@@ -137,7 +137,7 @@ func TestBundle_UnaryServerInterceptor_RecordsErrorStatus(t *testing.T) {
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Get"}
 
 	_, err := interceptor(context.Background(), nil, info,
-		func(ctx context.Context, req interface{}) (interface{}, error) {
+		func(ctx context.Context, req any) (any, error) {
 			return nil, status.Error(codes.NotFound, "missing")
 		})
 	if err == nil {
@@ -163,7 +163,7 @@ func TestBundle_StreamServerInterceptor_RecordsMetrics(t *testing.T) {
 	interceptor := b.StreamServerInterceptor()
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/Stream"}
 
-	err := interceptor(nil, nil, info, func(srv interface{}, stream grpc.ServerStream) error {
+	err := interceptor(nil, nil, info, func(srv any, stream grpc.ServerStream) error {
 		return nil
 	})
 	if err != nil {

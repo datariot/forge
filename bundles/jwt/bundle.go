@@ -75,7 +75,7 @@ package jwt
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -90,7 +90,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/datariot/forge/errors"
+	"github.com/datariot/forge/forgeerrors"
 	"github.com/datariot/forge/framework"
 )
 
@@ -146,31 +146,31 @@ func DefaultConfig() Config {
 // Validate validates the JWT configuration.
 func (c *Config) Validate() error {
 	if len(c.SecretKey) == 0 {
-		return stderrors.New("jwt secret key is required")
+		return errors.New("jwt secret key is required")
 	}
 
 	if len(c.SecretKey) < 32 {
-		return stderrors.New("jwt secret key must be at least 32 bytes for security")
+		return errors.New("jwt secret key must be at least 32 bytes for security")
 	}
 
 	if c.Issuer == "" {
-		return stderrors.New("jwt issuer is required")
+		return errors.New("jwt issuer is required")
 	}
 
 	if c.Audience == "" {
-		return stderrors.New("jwt audience is required")
+		return errors.New("jwt audience is required")
 	}
 
 	if c.ServiceName == "" {
-		return stderrors.New("service name is required for JWT authentication")
+		return errors.New("service name is required for JWT authentication")
 	}
 
 	if c.TokenDuration <= 0 {
-		return stderrors.New("token duration must be positive")
+		return errors.New("token duration must be positive")
 	}
 
 	if c.ClockSkew < 0 {
-		return stderrors.New("clock skew must be non-negative")
+		return errors.New("clock skew must be non-negative")
 	}
 
 	return nil
@@ -208,7 +208,7 @@ func (b *Bundle) Name() string {
 // Initialize sets up JWT authentication.
 func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.config.Validate(); err != nil {
-		return errors.ErrInvalidConfiguration.WithMessage("JWT configuration validation failed").WithCause(err)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("JWT configuration validation failed").WithCause(err)
 	}
 
 	return nil
@@ -247,25 +247,25 @@ func (b *Bundle) GenerateToken(serviceID, serviceName string, permissions []stri
 // ValidateToken validates a JWT token and returns the claims.
 func (b *Bundle) ValidateToken(tokenString string) (*ServiceClaims, error) {
 	if tokenString == "" {
-		return nil, errors.ErrInvalidCredential.WithMessage("token is required")
+		return nil, forgeerrors.ErrInvalidCredential.WithMessage("token is required")
 	}
 
 	// Parse and validate token
-	token, err := b.parser.ParseWithClaims(tokenString, &ServiceClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := b.parser.ParseWithClaims(tokenString, &ServiceClaims{}, func(token *jwt.Token) (any, error) {
 		return b.config.SecretKey, nil
 	})
 
 	if err != nil {
-		return nil, errors.ErrInvalidCredential.WithMessage("invalid token").WithCause(err)
+		return nil, forgeerrors.ErrInvalidCredential.WithMessage("invalid token").WithCause(err)
 	}
 
 	if !token.Valid {
-		return nil, errors.ErrInvalidCredential.WithMessage("token is not valid")
+		return nil, forgeerrors.ErrInvalidCredential.WithMessage("token is not valid")
 	}
 
 	claims, ok := token.Claims.(*ServiceClaims)
 	if !ok {
-		return nil, errors.ErrInvalidCredential.WithMessage("invalid token claims")
+		return nil, forgeerrors.ErrInvalidCredential.WithMessage("invalid token claims")
 	}
 
 	// Validate claims
@@ -282,17 +282,17 @@ func (b *Bundle) validateClaims(claims *ServiceClaims) error {
 
 	// Check expiration with clock skew
 	if claims.ExpiresAt != nil && now.After(claims.ExpiresAt.Add(b.config.ClockSkew)) {
-		return errors.ErrInvalidCredential.WithMessage("token has expired")
+		return forgeerrors.ErrInvalidCredential.WithMessage("token has expired")
 	}
 
 	// Check not before with clock skew (subtract clock skew to be more permissive)
 	if claims.NotBefore != nil && now.Before(claims.NotBefore.Add(-b.config.ClockSkew)) {
-		return errors.ErrInvalidCredential.WithMessage("token not yet valid")
+		return forgeerrors.ErrInvalidCredential.WithMessage("token not yet valid")
 	}
 
 	// Validate audience
 	if len(claims.Audience) == 0 {
-		return errors.ErrInvalidCredential.WithMessage("token missing audience")
+		return forgeerrors.ErrInvalidCredential.WithMessage("token missing audience")
 	}
 
 	audienceValid := false
@@ -303,12 +303,12 @@ func (b *Bundle) validateClaims(claims *ServiceClaims) error {
 		}
 	}
 	if !audienceValid {
-		return errors.ErrInvalidCredential.WithMessage("invalid token audience")
+		return forgeerrors.ErrInvalidCredential.WithMessage("invalid token audience")
 	}
 
 	// Validate issuer
 	if claims.Issuer != b.config.Issuer {
-		return errors.ErrInvalidCredential.WithMessage("invalid token issuer")
+		return forgeerrors.ErrInvalidCredential.WithMessage("invalid token issuer")
 	}
 
 	return nil
@@ -340,7 +340,7 @@ func (b *Bundle) authenticateContext(ctx context.Context) (*ServiceClaims, error
 
 // UnaryServerInterceptor returns a gRPC server interceptor for JWT authentication.
 func (b *Bundle) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		claims, err := b.authenticateContext(ctx)
 		if err != nil {
 			return nil, err
@@ -359,7 +359,7 @@ func (b *Bundle) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 // (grpc.ServerStream.Context()) and injects claims into a wrapped stream so
 // handlers can retrieve them via ClaimsFromContext.
 func (b *Bundle) StreamServerInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		claims, err := b.authenticateContext(ss.Context())
 		if err != nil {
 			return err
@@ -388,7 +388,7 @@ func (w *wrappedServerStream) Context() context.Context {
 
 // UnaryClientInterceptor returns a gRPC client interceptor for JWT token injection.
 func (b *Bundle) UnaryClientInterceptor() grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		// Get or generate cached token for this service
 		cacheKey := fmt.Sprintf("service:%s:permissions:", b.config.ServiceName)
 
@@ -461,17 +461,17 @@ func (b *Bundle) HTTPMiddleware(next http.Handler) http.Handler {
 func (b *Bundle) extractTokenFromMetadata(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return "", stderrors.New("no metadata found")
+		return "", errors.New("no metadata found")
 	}
 
 	authHeaders := md.Get("authorization")
 	if len(authHeaders) == 0 {
-		return "", stderrors.New("no authorization header found")
+		return "", errors.New("no authorization header found")
 	}
 
 	authHeader := authHeaders[0]
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return "", stderrors.New("invalid authorization header format")
+		return "", errors.New("invalid authorization header format")
 	}
 
 	return strings.TrimPrefix(authHeader, "Bearer "), nil
@@ -487,11 +487,11 @@ func (b *Bundle) addTokenToMetadata(ctx context.Context, token string) context.C
 func (b *Bundle) extractTokenFromHTTP(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		return "", stderrors.New("no authorization header found")
+		return "", errors.New("no authorization header found")
 	}
 
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return "", stderrors.New("invalid authorization header format")
+		return "", errors.New("invalid authorization header format")
 	}
 
 	return strings.TrimPrefix(authHeader, "Bearer "), nil
@@ -571,8 +571,8 @@ func HasPermission(ctx context.Context, permission string) bool {
 	return false
 }
 
-// GetServiceID returns the authenticated service ID from context.
-func GetServiceID(ctx context.Context) string {
+// ServiceID returns the authenticated service ID from context.
+func ServiceID(ctx context.Context) string {
 	claims := ClaimsFromContext(ctx)
 	if claims == nil {
 		return ""
@@ -580,8 +580,8 @@ func GetServiceID(ctx context.Context) string {
 	return claims.ServiceID
 }
 
-// GetServiceName returns the authenticated service name from context.
-func GetServiceName(ctx context.Context) string {
+// ServiceName returns the authenticated service name from context.
+func ServiceName(ctx context.Context) string {
 	claims := ClaimsFromContext(ctx)
 	if claims == nil {
 		return ""
@@ -717,22 +717,22 @@ func (tc *tokenCache) cleanup() {
 // validateServiceIdentifier validates service ID and name formats to prevent injection attacks.
 func validateServiceIdentifier(identifier string) error {
 	if identifier == "" {
-		return stderrors.New("identifier cannot be empty")
+		return errors.New("identifier cannot be empty")
 	}
 
 	// Service identifiers should only contain alphanumeric characters, hyphens, and underscores
 	// This prevents injection attacks and ensures safe usage in logs and metrics
 	if !validServiceIdentifierRe.MatchString(identifier) {
-		return stderrors.New("identifier contains invalid characters, only alphanumeric, hyphens, and underscores allowed")
+		return errors.New("identifier contains invalid characters, only alphanumeric, hyphens, and underscores allowed")
 	}
 
 	// Reasonable length limits
 	if len(identifier) > 64 {
-		return stderrors.New("identifier too long, maximum 64 characters")
+		return errors.New("identifier too long, maximum 64 characters")
 	}
 
 	if len(identifier) < 2 {
-		return stderrors.New("identifier too short, minimum 2 characters")
+		return errors.New("identifier too short, minimum 2 characters")
 	}
 
 	return nil

@@ -45,7 +45,7 @@ func TestApp_HandleReady_NotReady(t *testing.T) {
 	}
 
 	// Verify JSON response
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatalf("Failed to parse JSON response: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestApp_HealthEndpoints_RedactErrorDetail(t *testing.T) {
 				t.Errorf("expected response body to not leak raw dependency error, got: %s", body)
 			}
 
-			var parsed map[string]interface{}
+			var parsed map[string]any
 			if err := json.Unmarshal(w.Body.Bytes(), &parsed); err != nil {
 				t.Fatalf("failed to parse JSON response: %v", err)
 			}

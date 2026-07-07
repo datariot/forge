@@ -66,7 +66,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/datariot/forge/errors"
+	"github.com/datariot/forge/forgeerrors"
 	"github.com/datariot/forge/framework"
 	forgeHealth "github.com/datariot/forge/health"
 )
@@ -119,33 +119,33 @@ func (b *Bundle) Name() string {
 // Initialize sets up the PostgreSQL connection and performs migrations if configured.
 func (b *Bundle) Initialize(app *framework.App) error {
 	if b.config.DatabaseURL == "" {
-		return errors.ErrInvalidConfiguration.WithMessage("database_url is required for PostgreSQL bundle")
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("database_url is required for PostgreSQL bundle")
 	}
 
 	// Validate connection pool configuration
 	if b.config.MaxOpenConns <= 0 {
-		return errors.ErrInvalidConfiguration.WithMessage("max_open_conns must be positive, got %d", b.config.MaxOpenConns)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("max_open_conns must be positive, got %d", b.config.MaxOpenConns)
 	}
 	if b.config.MaxIdleConns < 0 {
-		return errors.ErrInvalidConfiguration.WithMessage("max_idle_conns must be non-negative, got %d", b.config.MaxIdleConns)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("max_idle_conns must be non-negative, got %d", b.config.MaxIdleConns)
 	}
 	if b.config.MaxIdleConns > b.config.MaxOpenConns {
-		return errors.ErrInvalidConfiguration.WithMessage("max_idle_conns (%d) cannot exceed max_open_conns (%d)", b.config.MaxIdleConns, b.config.MaxOpenConns)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("max_idle_conns (%d) cannot exceed max_open_conns (%d)", b.config.MaxIdleConns, b.config.MaxOpenConns)
 	}
 	if b.config.ConnMaxLifetime <= 0 {
-		return errors.ErrInvalidConfiguration.WithMessage("conn_max_lifetime must be positive, got %v", b.config.ConnMaxLifetime)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("conn_max_lifetime must be positive, got %v", b.config.ConnMaxLifetime)
 	}
 	if b.config.ConnMaxIdleTime < 0 {
-		return errors.ErrInvalidConfiguration.WithMessage("conn_max_idle_time must be non-negative, got %v", b.config.ConnMaxIdleTime)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("conn_max_idle_time must be non-negative, got %v", b.config.ConnMaxIdleTime)
 	}
 	if b.config.HealthCheckTimeout <= 0 {
-		return errors.ErrInvalidConfiguration.WithMessage("health_check_timeout must be positive, got %v", b.config.HealthCheckTimeout)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("health_check_timeout must be positive, got %v", b.config.HealthCheckTimeout)
 	}
 
 	// Open database connection
 	db, err := sql.Open("pgx", b.config.DatabaseURL)
 	if err != nil {
-		return errors.ErrRepositoryUnavailable.WithMessage("failed to open PostgreSQL connection").WithCause(err)
+		return forgeerrors.ErrRepositoryUnavailable.WithMessage("failed to open PostgreSQL connection").WithCause(err)
 	}
 
 	// Configure connection pool
@@ -160,7 +160,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return errors.ErrRepositoryUnavailable.WithMessage("failed to ping PostgreSQL database").WithCause(err)
+		return forgeerrors.ErrRepositoryUnavailable.WithMessage("failed to ping PostgreSQL database").WithCause(err)
 	}
 
 	b.db = db

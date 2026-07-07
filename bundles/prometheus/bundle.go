@@ -80,7 +80,7 @@ package prometheus
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -94,7 +94,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 
-	"github.com/datariot/forge/errors"
+	"github.com/datariot/forge/forgeerrors"
 	"github.com/datariot/forge/framework"
 	forgeHealth "github.com/datariot/forge/health"
 )
@@ -143,16 +143,16 @@ func DefaultConfig() Config {
 // Validate validates the Prometheus configuration.
 func (c *Config) Validate() error {
 	if c.Namespace == "" {
-		return stderrors.New("namespace is required for Prometheus metrics")
+		return errors.New("namespace is required for Prometheus metrics")
 	}
 
 	// Validate metric naming (Prometheus has strict naming rules)
 	if !isValidMetricName(c.Namespace) {
-		return stderrors.New("invalid namespace format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
+		return errors.New("invalid namespace format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
 	}
 
 	if c.Subsystem != "" && !isValidMetricName(c.Subsystem) {
-		return stderrors.New("invalid subsystem format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
+		return errors.New("invalid subsystem format: must match [a-zA-Z_:][a-zA-Z0-9_:]*")
 	}
 
 	// Validate service labels for security and cardinality
@@ -177,7 +177,7 @@ func (c *Config) Validate() error {
 
 	// Validate histogram buckets
 	if len(c.HistogramBuckets) == 0 {
-		return stderrors.New("histogram buckets cannot be empty")
+		return errors.New("histogram buckets cannot be empty")
 	}
 
 	if len(c.HistogramBuckets) > 50 {
@@ -187,13 +187,13 @@ func (c *Config) Validate() error {
 	// Ensure buckets are in ascending order and reasonable
 	for i := 1; i < len(c.HistogramBuckets); i++ {
 		if c.HistogramBuckets[i] <= c.HistogramBuckets[i-1] {
-			return stderrors.New("histogram buckets must be in ascending order")
+			return errors.New("histogram buckets must be in ascending order")
 		}
 	}
 
 	// Validate bucket ranges are reasonable
 	if c.HistogramBuckets[0] <= 0 {
-		return stderrors.New("histogram buckets must be positive")
+		return errors.New("histogram buckets must be positive")
 	}
 
 	return nil
@@ -238,7 +238,7 @@ func (b *Bundle) Name() string {
 // Initialize sets up Prometheus metrics collection.
 func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.config.Validate(); err != nil {
-		return errors.ErrInvalidConfiguration.WithMessage("Prometheus configuration validation failed").WithCause(err)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("Prometheus configuration validation failed").WithCause(err)
 	}
 
 	b.logger = app.Logger().WithService("prometheus", "prometheus")
@@ -287,7 +287,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 // status label is derived from the returned error via gRPC status codes
 // (e.g. "OK", "NotFound", "Internal"), so a nil error always records "OK".
 func (b *Bundle) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		start := time.Now()
 		resp, err := handler(ctx, req)
 		b.RecordGRPCRequest(info.FullMethod, status.Code(err).String(), time.Since(start))
@@ -299,7 +299,7 @@ func (b *Bundle) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 // automatically records RecordGRPCRequest metrics for every streaming call.
 // See UnaryServerInterceptor for how the status label is derived.
 func (b *Bundle) StreamServerInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		start := time.Now()
 		err := handler(srv, ss)
 		b.RecordGRPCRequest(info.FullMethod, status.Code(err).String(), time.Since(start))
@@ -545,7 +545,7 @@ func (b *Bundle) registerMetric(collector prometheus.Collector) error {
 	err := b.registry.Register(collector)
 	if err != nil {
 		var alreadyRegisteredErr prometheus.AlreadyRegisteredError
-		if stderrors.As(err, &alreadyRegisteredErr) {
+		if errors.As(err, &alreadyRegisteredErr) {
 			// Metric already exists - this is not an error in most cases
 			return nil
 		}
@@ -731,7 +731,7 @@ func (b *Bundle) validateMetricDefinition(name, help string, labelNames []string
 	}
 
 	if help == "" {
-		return stderrors.New("metric help text is required")
+		return errors.New("metric help text is required")
 	}
 
 	// Prevent high cardinality
@@ -791,13 +791,13 @@ func DefaultSecurityConfig() SecurityConfig {
 	}
 }
 
-// GetMetricsHandler returns an HTTP handler for the /metrics endpoint with basic security.
-func (b *Bundle) GetMetricsHandler() http.Handler {
-	return b.GetSecureMetricsHandler(DefaultSecurityConfig())
+// MetricsHandler returns an HTTP handler for the /metrics endpoint with basic security.
+func (b *Bundle) MetricsHandler() http.Handler {
+	return b.SecureMetricsHandler(DefaultSecurityConfig())
 }
 
-// GetSecureMetricsHandler returns a secured HTTP handler for the /metrics endpoint.
-func (b *Bundle) GetSecureMetricsHandler(secConfig SecurityConfig) http.Handler {
+// SecureMetricsHandler returns a secured HTTP handler for the /metrics endpoint.
+func (b *Bundle) SecureMetricsHandler(secConfig SecurityConfig) http.Handler {
 	handler := promhttp.HandlerFor(
 		b.gatherer,
 		promhttp.HandlerOpts{
@@ -883,7 +883,7 @@ func (c *PrometheusHealthCheck) Readiness(ctx context.Context) error {
 
 	// Ensure we have at least some metrics registered
 	if len(metricFamilies) == 0 {
-		return stderrors.New("no metrics registered in Prometheus registry")
+		return errors.New("no metrics registered in Prometheus registry")
 	}
 
 	// Check for expected namespace metrics

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datariot/forge/errors"
+	"github.com/datariot/forge/forgeerrors"
 )
 
 // TestDefaultConfig tests default configuration values
@@ -70,7 +70,7 @@ func TestBundle_Initialize_MissingDatabaseURL(t *testing.T) {
 		t.Fatal("Expected error for missing database URL")
 	}
 
-	if !errors.IsConfigurationError(err) {
+	if !forgeerrors.IsConfigurationError(err) {
 		t.Error("Expected configuration error")
 	}
 }
@@ -88,7 +88,7 @@ func TestBundle_Initialize_InvalidMaxOpenConns(t *testing.T) {
 		t.Fatal("Expected error for invalid MaxOpenConns")
 	}
 
-	if !errors.IsConfigurationError(err) {
+	if !forgeerrors.IsConfigurationError(err) {
 		t.Error("Expected configuration error")
 	}
 }

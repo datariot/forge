@@ -76,7 +76,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -85,7 +85,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/datariot/forge/errors"
+	"github.com/datariot/forge/forgeerrors"
 	"github.com/datariot/forge/framework"
 	forgeHealth "github.com/datariot/forge/health"
 )
@@ -140,7 +140,7 @@ func DefaultConfig() Config {
 // Validate validates the Redis configuration.
 func (c *Config) Validate() error {
 	if c.RedisURL == "" {
-		return stderrors.New("redis_url is required")
+		return errors.New("redis_url is required")
 	}
 
 	// Parse and validate Redis URL
@@ -151,28 +151,28 @@ func (c *Config) Validate() error {
 
 	// Validate scheme
 	if parsedURL.Scheme != "redis" && parsedURL.Scheme != "rediss" {
-		return stderrors.New("redis_url must use 'redis://' or 'rediss://' scheme")
+		return errors.New("redis_url must use 'redis://' or 'rediss://' scheme")
 	}
 
 	// Security: Enforce authentication for remote connections
 	if parsedURL.Hostname() != "localhost" && parsedURL.Hostname() != "127.0.0.1" && parsedURL.Hostname() != "" {
 		if parsedURL.User == nil {
-			return stderrors.New("authentication required for remote Redis connections")
+			return errors.New("authentication required for remote Redis connections")
 		}
 		if password, ok := parsedURL.User.Password(); !ok || password == "" {
-			return stderrors.New("password required for remote Redis connections")
+			return errors.New("password required for remote Redis connections")
 		}
 	}
 
 	// Security: Enforce TLS for remote connections
 	if parsedURL.Scheme == "redis" && parsedURL.Hostname() != "localhost" && parsedURL.Hostname() != "127.0.0.1" && parsedURL.Hostname() != "" {
-		return stderrors.New("TLS required for remote Redis connections, use rediss:// scheme")
+		return errors.New("TLS required for remote Redis connections, use rediss:// scheme")
 	}
 
 	// Validate TLS configuration if using rediss://
 	if parsedURL.Scheme == "rediss" && c.TLSConfig != nil {
 		if c.TLSConfig.InsecureSkipVerify {
-			return stderrors.New("TLS certificate verification cannot be disabled for security")
+			return errors.New("TLS certificate verification cannot be disabled for security")
 		}
 	}
 
@@ -255,13 +255,13 @@ func (b *Bundle) Name() string {
 // Initialize sets up the Redis connection and services.
 func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.config.Validate(); err != nil {
-		return errors.ErrInvalidConfiguration.WithMessage("Redis configuration validation failed").WithCause(err)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("Redis configuration validation failed").WithCause(err)
 	}
 
 	// Parse Redis URL
 	opts, err := redis.ParseURL(b.config.RedisURL)
 	if err != nil {
-		return errors.ErrInvalidConfiguration.WithMessage("invalid Redis URL format").WithCause(err)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("invalid Redis URL format").WithCause(err)
 	}
 
 	// Apply configuration overrides
@@ -293,7 +293,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 
 	if err := b.client.Ping(ctx).Err(); err != nil {
 		_ = b.client.Close()
-		return errors.ErrRepositoryUnavailable.WithMessage(
+		return forgeerrors.ErrRepositoryUnavailable.WithMessage(
 			"failed to connect to Redis at %s", b.config.SanitizedRedisURL(),
 		).WithCause(err)
 	}
@@ -418,7 +418,7 @@ func (c *RedisHealthCheck) Readiness(ctx context.Context) error {
 }
 
 // ErrCacheMiss indicates the requested key does not exist in the cache.
-var ErrCacheMiss = stderrors.New("cache miss")
+var ErrCacheMiss = errors.New("cache miss")
 
 // CacheService provides high-level caching operations.
 type CacheService struct {
@@ -431,7 +431,7 @@ func NewCacheService(client redis.UniversalClient) *CacheService {
 }
 
 // Set stores a value in the cache with the specified TTL.
-func (c *CacheService) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (c *CacheService) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cache value: %w", err)
@@ -441,10 +441,10 @@ func (c *CacheService) Set(ctx context.Context, key string, value interface{}, t
 }
 
 // Get retrieves a value from the cache and unmarshals it into the provided destination.
-func (c *CacheService) Get(ctx context.Context, key string, dest interface{}) error {
+func (c *CacheService) Get(ctx context.Context, key string, dest any) error {
 	data, err := c.client.Get(ctx, key).Result()
 	if err != nil {
-		if stderrors.Is(err, redis.Nil) {
+		if errors.Is(err, redis.Nil) {
 			return fmt.Errorf("cache key %q: %w", key, ErrCacheMiss)
 		}
 		return fmt.Errorf("failed to get cache value: %w", err)
@@ -491,7 +491,7 @@ func NewPubSubService(client redis.UniversalClient) *PubSubService {
 }
 
 // Publish publishes a message to the specified channel.
-func (p *PubSubService) Publish(ctx context.Context, channel string, message interface{}) error {
+func (p *PubSubService) Publish(ctx context.Context, channel string, message any) error {
 	data, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("failed to marshal pub/sub message: %w", err)

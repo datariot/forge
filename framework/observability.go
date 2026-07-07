@@ -236,16 +236,16 @@ func (om *ObservabilityManager) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// GetTracer returns a tracer for the given name.
-func (om *ObservabilityManager) GetTracer(name string) oteltrace.Tracer {
+// Tracer returns a tracer for the given name.
+func (om *ObservabilityManager) Tracer(name string) oteltrace.Tracer {
 	if om.traceProvider == nil {
 		return otel.Tracer(name)
 	}
 	return om.traceProvider.Tracer(name)
 }
 
-// GetMeter returns a meter for the given name.
-func (om *ObservabilityManager) GetMeter(name string) otelmetric.Meter {
+// Meter returns a meter for the given name.
+func (om *ObservabilityManager) Meter(name string) otelmetric.Meter {
 	if om.meterProvider == nil {
 		return otel.Meter(name)
 	}

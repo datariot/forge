@@ -554,15 +554,15 @@ func TestClient_HealthCheck_EmptyURL(t *testing.T) {
 	}
 }
 
-func TestClient_GetCircuitBreakerState(t *testing.T) {
+func TestClient_CircuitBreakerState(t *testing.T) {
 	client := newTestClient(t, "")
-	state := client.GetCircuitBreakerState()
+	state := client.CircuitBreakerState()
 	_ = state
 }
 
-func TestClient_GetCircuitBreakerCounts(t *testing.T) {
+func TestClient_CircuitBreakerCounts(t *testing.T) {
 	client := newTestClient(t, "")
-	counts := client.GetCircuitBreakerCounts()
+	counts := client.CircuitBreakerCounts()
 	_ = counts
 }
 

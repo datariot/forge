@@ -67,7 +67,7 @@ func (lm *LoggingManager) WithService(service, component string) zerolog.Logger 
 }
 
 // WithContext creates a logger with additional context fields.
-func (lm *LoggingManager) WithContext(fields map[string]interface{}) zerolog.Logger {
+func (lm *LoggingManager) WithContext(fields map[string]any) zerolog.Logger {
 	ctx := lm.logger.With()
 	for key, value := range fields {
 		ctx = ctx.Interface(key, value)
@@ -86,32 +86,32 @@ type healthLoggerAdapter struct {
 	logger zerolog.Logger
 }
 
-func (h *healthLoggerAdapter) Debug(msg string, fields ...interface{}) {
+func (h *healthLoggerAdapter) Debug(msg string, fields ...any) {
 	event := h.logger.Debug()
 	h.addFields(event, fields)
 	event.Msg(msg)
 }
 
-func (h *healthLoggerAdapter) Info(msg string, fields ...interface{}) {
+func (h *healthLoggerAdapter) Info(msg string, fields ...any) {
 	event := h.logger.Info()
 	h.addFields(event, fields)
 	event.Msg(msg)
 }
 
-func (h *healthLoggerAdapter) Warn(msg string, fields ...interface{}) {
+func (h *healthLoggerAdapter) Warn(msg string, fields ...any) {
 	event := h.logger.Warn()
 	h.addFields(event, fields)
 	event.Msg(msg)
 }
 
-func (h *healthLoggerAdapter) Error(msg string, fields ...interface{}) {
+func (h *healthLoggerAdapter) Error(msg string, fields ...any) {
 	event := h.logger.Error()
 	h.addFields(event, fields)
 	event.Msg(msg)
 }
 
 // addFields safely adds key-value pairs to a zerolog event
-func (h *healthLoggerAdapter) addFields(event *zerolog.Event, fields []interface{}) {
+func (h *healthLoggerAdapter) addFields(event *zerolog.Event, fields []any) {
 	for i := 0; i < len(fields)-1; i += 2 {
 		key, ok := fields[i].(string)
 		if !ok {

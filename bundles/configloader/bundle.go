@@ -83,7 +83,7 @@ package configloader
 import (
 	"context"
 	"encoding/json"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -99,7 +99,7 @@ import (
 	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 
-	"github.com/datariot/forge/errors"
+	"github.com/datariot/forge/forgeerrors"
 	"github.com/datariot/forge/framework"
 )
 
@@ -154,13 +154,13 @@ func DefaultConfig() Config {
 // Validate validates the configuration loader settings.
 func (c *Config) Validate() error {
 	if len(c.ConfigPaths) == 0 {
-		return stderrors.New("at least one config path must be specified")
+		return errors.New("at least one config path must be specified")
 	}
 
 	// Validate config paths
 	for _, path := range c.ConfigPaths {
 		if path == "" {
-			return stderrors.New("config path cannot be empty")
+			return errors.New("config path cannot be empty")
 		}
 		if !filepath.IsAbs(path) && !strings.HasPrefix(path, "./") {
 			return fmt.Errorf("config path must be absolute or relative (starting with ./): %s", path)
@@ -194,7 +194,7 @@ func (b *Bundle) Name() string {
 // Initialize sets up the configuration loader.
 func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.config.Validate(); err != nil {
-		return errors.ErrInvalidConfiguration.WithMessage("Configuration loader validation failed").WithCause(err)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("Configuration loader validation failed").WithCause(err)
 	}
 
 	if app != nil {
@@ -283,7 +283,7 @@ func (b *Bundle) initializeWatcher() error {
 type Loader struct {
 	config          Config
 	loadedFrom      string
-	changeCallbacks []func(interface{})
+	changeCallbacks []func(any)
 	mu              sync.RWMutex
 }
 
@@ -297,14 +297,14 @@ type LoadResult struct {
 }
 
 // Load loads configuration into the provided struct from multiple sources.
-func (l *Loader) Load(dest interface{}) (*LoadResult, error) {
+func (l *Loader) Load(dest any) (*LoadResult, error) {
 	if dest == nil {
-		return nil, stderrors.New("destination cannot be nil")
+		return nil, errors.New("destination cannot be nil")
 	}
 
 	destValue := reflect.ValueOf(dest)
 	if destValue.Kind() != reflect.Pointer || destValue.Elem().Kind() != reflect.Struct {
-		return nil, stderrors.New("destination must be a pointer to a struct")
+		return nil, errors.New("destination must be a pointer to a struct")
 	}
 
 	result := &LoadResult{
@@ -365,7 +365,7 @@ func (l *Loader) findConfigFile() (string, error) {
 }
 
 // loadFromFile loads configuration from a file based on its extension with security validation.
-func (l *Loader) loadFromFile(filename string, dest interface{}) error {
+func (l *Loader) loadFromFile(filename string, dest any) error {
 	// Validate file path for security
 	if err := l.validateFilePath(filename); err != nil {
 		return fmt.Errorf("invalid config file path: %w", err)
@@ -418,7 +418,7 @@ func (l *Loader) loadFromFile(filename string, dest interface{}) error {
 }
 
 // loadYAML loads configuration from YAML data.
-func (l *Loader) loadYAML(data []byte, dest interface{}) error {
+func (l *Loader) loadYAML(data []byte, dest any) error {
 	if err := yaml.Unmarshal(data, dest); err != nil {
 		return fmt.Errorf("failed to parse YAML: %w", err)
 	}
@@ -426,7 +426,7 @@ func (l *Loader) loadYAML(data []byte, dest interface{}) error {
 }
 
 // loadJSON loads configuration from JSON data.
-func (l *Loader) loadJSON(data []byte, dest interface{}) error {
+func (l *Loader) loadJSON(data []byte, dest any) error {
 	if err := json.Unmarshal(data, dest); err != nil {
 		return fmt.Errorf("failed to parse JSON: %w", err)
 	}
@@ -573,7 +573,7 @@ func (l *Loader) setFieldValue(field reflect.Value, value string) error {
 				field.Set(reflect.ValueOf(values))
 			}
 		} else {
-			return stderrors.New("unsupported slice type for field")
+			return errors.New("unsupported slice type for field")
 		}
 	default:
 		return fmt.Errorf("unsupported field type: %s", field.Kind())
@@ -701,16 +701,16 @@ func toEnvVarName(fieldName string) string {
 }
 
 // OnConfigChange registers a callback for configuration changes (hot reload).
-func (l *Loader) OnConfigChange(callback func(interface{})) {
+func (l *Loader) OnConfigChange(callback func(any)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.changeCallbacks = append(l.changeCallbacks, callback)
 }
 
 // StartWatching starts watching configuration files for changes.
-func (b *Bundle) StartWatching(ctx context.Context, dest interface{}) error {
+func (b *Bundle) StartWatching(ctx context.Context, dest any) error {
 	if b.watcher == nil {
-		return stderrors.New("file watcher not initialized")
+		return errors.New("file watcher not initialized")
 	}
 
 	go func() {
@@ -731,7 +731,7 @@ func (b *Bundle) StartWatching(ctx context.Context, dest interface{}) error {
 
 					// Notify callbacks
 					b.loader.mu.RLock()
-					callbacks := make([]func(interface{}), len(b.loader.changeCallbacks))
+					callbacks := make([]func(any), len(b.loader.changeCallbacks))
 					copy(callbacks, b.loader.changeCallbacks)
 					b.loader.mu.RUnlock()
 
@@ -755,12 +755,12 @@ func (b *Bundle) StartWatching(ctx context.Context, dest interface{}) error {
 	return nil
 }
 
-// GetConfigInfo returns information about the loaded configuration.
-func (l *Loader) GetConfigInfo() map[string]interface{} {
+// ConfigInfo returns information about the loaded configuration.
+func (l *Loader) ConfigInfo() map[string]any {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	return map[string]interface{}{
+	return map[string]any{
 		"loaded_from":      l.loadedFrom,
 		"config_paths":     l.config.ConfigPaths,
 		"env_prefix":       l.config.EnvPrefix,
@@ -772,7 +772,7 @@ func (l *Loader) GetConfigInfo() map[string]interface{} {
 }
 
 // LoadFromString loads configuration from a string (useful for testing).
-func (l *Loader) LoadFromString(data, format string, dest interface{}) error {
+func (l *Loader) LoadFromString(data, format string, dest any) error {
 	switch strings.ToLower(format) {
 	case "yaml", "yml":
 		return l.loadYAML([]byte(data), dest)
@@ -784,7 +784,7 @@ func (l *Loader) LoadFromString(data, format string, dest interface{}) error {
 }
 
 // MustLoad loads configuration and panics on error (useful for application startup).
-func (l *Loader) MustLoad(dest interface{}) *LoadResult {
+func (l *Loader) MustLoad(dest any) *LoadResult {
 	result, err := l.Load(dest)
 	if err != nil {
 		panic(fmt.Sprintf("Configuration loading failed: %v", err))
@@ -793,7 +793,7 @@ func (l *Loader) MustLoad(dest interface{}) *LoadResult {
 }
 
 // Reload reloads configuration from all sources.
-func (l *Loader) Reload(dest interface{}) (*LoadResult, error) {
+func (l *Loader) Reload(dest any) (*LoadResult, error) {
 	return l.Load(dest) // Load method already handles all sources
 }
 
@@ -802,14 +802,14 @@ func (l *Loader) Reload(dest interface{}) (*LoadResult, error) {
 // Paths containing ".." traversal sequences are rejected regardless of resolution outcome.
 func (l *Loader) validateFilePath(filename string) error {
 	if filename == "" {
-		return stderrors.New("configuration file path cannot be empty")
+		return errors.New("configuration file path cannot be empty")
 	}
 
 	// Reject inputs that contain path traversal sequences before any resolution.
 	// filepath.Clean / filepath.Abs would silently resolve "../../../etc/passwd" to
 	// a valid absolute path, making it look legitimate. We block such inputs explicitly.
 	if strings.Contains(filepath.Clean(filename), "..") {
-		return stderrors.New("path traversal not allowed in configuration file path")
+		return errors.New("path traversal not allowed in configuration file path")
 	}
 
 	// Resolve relative paths to absolute
@@ -858,7 +858,7 @@ func LoadConfig[T any](configPaths ...string) (*T, *LoadResult, error) {
 	return &cfg, result, nil
 }
 
-// MustLoadConfig is a convenience function that panics on configuration loading errors.
+// MustLoadConfig is a convenience function that panics on configuration loading forgeerrors.
 func MustLoadConfig[T any](configPaths ...string) (*T, *LoadResult) {
 	cfg, result, err := LoadConfig[T](configPaths...)
 	if err != nil {

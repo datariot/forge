@@ -160,7 +160,7 @@ func (s *HTTPClientService) handleTestGet(w http.ResponseWriter, r *http.Request
 	client := s.httpBundle.Client()
 
 	// Make GET request to httpbin.org
-	var response map[string]interface{}
+	var response map[string]any
 	err := client.Get(r.Context(), "/get?test=true", &response)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("GET request failed: %v", err), http.StatusBadGateway)
@@ -169,7 +169,7 @@ func (s *HTTPClientService) handleTestGet(w http.ResponseWriter, r *http.Request
 
 	// Return the response
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"success":  true,
 		"method":   "GET",
 		"target":   s.config.TargetServiceURL + "/get",
@@ -189,7 +189,7 @@ func (s *HTTPClientService) handleTestPost(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Make POST request
-	var response map[string]interface{}
+	var response map[string]any
 	err := client.Post(r.Context(), "/post", user, &response)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("POST request failed: %v", err), http.StatusBadGateway)
@@ -198,7 +198,7 @@ func (s *HTTPClientService) handleTestPost(w http.ResponseWriter, r *http.Reques
 
 	// Return the response
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"success":  true,
 		"method":   "POST",
 		"target":   s.config.TargetServiceURL + "/post",
@@ -215,7 +215,7 @@ func (s *HTTPClientService) handleTestUnreliable(w http.ResponseWriter, r *http.
 	statusCodes := []int{200, 500, 502, 503, 504}
 	randomStatus := statusCodes[rand.Intn(len(statusCodes))]
 
-	var response map[string]interface{}
+	var response map[string]any
 	err := client.Get(r.Context(), "/status/"+strconv.Itoa(randomStatus), &response)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -223,7 +223,7 @@ func (s *HTTPClientService) handleTestUnreliable(w http.ResponseWriter, r *http.
 	if err != nil {
 		// Check if circuit breaker is open
 		if err == httpclient.ErrCircuitBreakerOpen {
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"success":         false,
 				"error":           "Circuit breaker is open",
 				"circuit_breaker": "OPEN",
@@ -232,7 +232,7 @@ func (s *HTTPClientService) handleTestUnreliable(w http.ResponseWriter, r *http.
 			return
 		}
 
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"success": false,
 			"error":   err.Error(),
 			"target":  s.config.TargetServiceURL + "/status/" + strconv.Itoa(randomStatus),
@@ -240,7 +240,7 @@ func (s *HTTPClientService) handleTestUnreliable(w http.ResponseWriter, r *http.
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"success":     true,
 		"method":      "GET",
 		"target":      s.config.TargetServiceURL + "/status/" + strconv.Itoa(randomStatus),
@@ -263,7 +263,7 @@ func (s *HTTPClientService) handleTestAuth(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Make authenticated request
-	var response map[string]interface{}
+	var response map[string]any
 	err := client.Get(ctx, "/bearer", &response)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Authenticated request failed: %v", err), http.StatusBadGateway)
@@ -271,7 +271,7 @@ func (s *HTTPClientService) handleTestAuth(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"success":       true,
 		"method":        "GET",
 		"target":        s.config.TargetServiceURL + "/bearer",
@@ -284,12 +284,12 @@ func (s *HTTPClientService) handleTestAuth(w http.ResponseWriter, r *http.Reques
 func (s *HTTPClientService) handleCircuitBreakerStatus(w http.ResponseWriter, r *http.Request) {
 	client := s.httpBundle.Client()
 
-	state := client.GetCircuitBreakerState()
-	counts := client.GetCircuitBreakerCounts()
+	state := client.CircuitBreakerState()
+	counts := client.CircuitBreakerCounts()
 
-	status := map[string]interface{}{
+	status := map[string]any{
 		"state": state.String(),
-		"counts": map[string]interface{}{
+		"counts": map[string]any{
 			"requests":              counts.Requests,
 			"total_successes":       counts.TotalSuccesses,
 			"total_failures":        counts.TotalFailures,
@@ -307,7 +307,7 @@ func (s *HTTPClientService) handleCircuitBreakerStatus(w http.ResponseWriter, r 
 func (s *HTTPClientService) handleClientStats(w http.ResponseWriter, r *http.Request) {
 	// This would show connection pool stats, request metrics, etc.
 	// For now, return basic information
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"service":      s.config.ServiceName,
 		"target_url":   s.config.TargetServiceURL,
 		"timeout":      s.clientTimeout.String(),
@@ -339,7 +339,7 @@ func (c *HTTPClientHealthCheck) Liveness(ctx context.Context) error {
 // Readiness performs a comprehensive HTTP client readiness check.
 func (c *HTTPClientHealthCheck) Readiness(ctx context.Context) error {
 	// Check circuit breaker state
-	state := c.client.GetCircuitBreakerState()
+	state := c.client.CircuitBreakerState()
 	if state == gobreaker.StateOpen {
 		return fmt.Errorf("HTTP client circuit breaker is open")
 	}
