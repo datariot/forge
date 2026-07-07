@@ -248,6 +248,10 @@ type App struct {
 	unaryInterceptors  []grpc.UnaryServerInterceptor
 	streamInterceptors []grpc.StreamServerInterceptor
 
+	// HTTP middleware, applied outermost-first around the built mux (health,
+	// metrics, pprof, and user HTTPRegistrar routes).
+	httpMiddlewares []func(http.Handler) http.Handler
+
 	// Hooks
 	startupHooks  []StartupHook
 	shutdownHooks []ShutdownHook
@@ -273,6 +277,7 @@ func New(options ...AppOption) (*App, error) {
 		bundles:            make([]Bundle, 0),
 		unaryInterceptors:  make([]grpc.UnaryServerInterceptor, 0),
 		streamInterceptors: make([]grpc.StreamServerInterceptor, 0),
+		httpMiddlewares:    make([]func(http.Handler) http.Handler, 0),
 		startupHooks:       make([]StartupHook, 0),
 		shutdownHooks:      make([]ShutdownHook, 0),
 	}
@@ -483,6 +488,78 @@ func WithStreamInterceptor(interceptor grpc.StreamServerInterceptor) AppOption {
 		app.streamInterceptors = append(app.streamInterceptors, interceptor)
 		return nil
 	}
+}
+
+// AddUnaryInterceptor registers a gRPC unary server interceptor from a
+// bundle's Initialize method (or any other code that runs before the gRPC
+// server is built). Interceptors are applied in registration order —
+// combined with any interceptors passed to New via WithUnaryInterceptor,
+// which run first — so a bundle wanting to be outermost (e.g. to time the
+// whole call for metrics) should be registered as one of the first bundles.
+//
+// The gRPC server is built partway through Start, in startGRPCServer, which
+// runs after all bundles' Initialize methods. Since Initialize always runs
+// before that point, calling AddUnaryInterceptor from Initialize is safe.
+// Calling it after the server has already been built is a no-op: interceptors
+// are baked into grpc.NewServer at construction time and cannot be added
+// afterward.
+func (a *App) AddUnaryInterceptor(interceptor grpc.UnaryServerInterceptor) {
+	if interceptor == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.grpcServer != nil {
+		return
+	}
+	a.unaryInterceptors = append(a.unaryInterceptors, interceptor)
+}
+
+// AddStreamInterceptor registers a gRPC stream server interceptor. See
+// AddUnaryInterceptor for the ordering and timing guarantees.
+func (a *App) AddStreamInterceptor(interceptor grpc.StreamServerInterceptor) {
+	if interceptor == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.grpcServer != nil {
+		return
+	}
+	a.streamInterceptors = append(a.streamInterceptors, interceptor)
+}
+
+// AddHTTPMiddleware registers HTTP middleware from a bundle's Initialize
+// method (or any other code that runs before the HTTP server is built).
+// Middleware is applied outermost-first in registration order — the first
+// middleware added sees the request first and the response last — and wraps
+// the complete handler built by startHTTPServer, including the health,
+// metrics, pprof, and any user HTTPRegistrar routes.
+//
+// The HTTP server is built partway through Start, in startHTTPServer, which
+// runs after all bundles' Initialize methods, so calling AddHTTPMiddleware
+// from Initialize is safe. Calling it after the server has already been
+// built is a no-op.
+func (a *App) AddHTTPMiddleware(middleware func(http.Handler) http.Handler) {
+	if middleware == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.httpServer != nil {
+		return
+	}
+	a.httpMiddlewares = append(a.httpMiddlewares, middleware)
+}
+
+// httpMiddlewareSnapshot returns a copy of the currently registered HTTP
+// middleware chain, in registration order.
+func (a *App) httpMiddlewareSnapshot() []func(http.Handler) http.Handler {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	snapshot := make([]func(http.Handler) http.Handler, len(a.httpMiddlewares))
+	copy(snapshot, a.httpMiddlewares)
+	return snapshot
 }
 
 // Config returns the application configuration.
