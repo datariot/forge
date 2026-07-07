@@ -1,6 +1,7 @@
 package health
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -247,5 +248,47 @@ func TestStatusResponse_Creation(t *testing.T) {
 
 	if resp.Message != "test message" {
 		t.Errorf("Expected message 'test message', got %s", resp.Message)
+	}
+}
+
+// --- HealthStatus.Redacted tests ---
+
+func TestHealthStatus_Redacted_StripsCheckErrors(t *testing.T) {
+	status := HealthStatus{
+		Status:  StatusUnhealthy,
+		Message: "One or more checks failed",
+		Details: map[string]CheckResult{
+			"postgres": NewCheckResult("postgres", true, time.Millisecond, errors.New("dial tcp 10.0.1.5:5432: connect: connection refused")),
+			"cache":    NewCheckResult("cache", false, time.Millisecond, nil),
+		},
+	}
+
+	redacted := status.Redacted()
+
+	if redacted.Status != status.Status {
+		t.Errorf("expected overall Status preserved, got %q", redacted.Status)
+	}
+	if redacted.Message != status.Message {
+		t.Errorf("expected overall Message preserved, got %q", redacted.Message)
+	}
+
+	for name, result := range redacted.Details {
+		if result.Error != "" {
+			t.Errorf("expected redacted Details[%q].Error to be empty, got %q", name, result.Error)
+		}
+	}
+
+	if status.Details["postgres"].Error == "" {
+		t.Error("expected original status Details to remain unaffected")
+	}
+}
+
+func TestHealthStatus_Redacted_NoDetails(t *testing.T) {
+	status := NewHealthyStatus("")
+
+	redacted := status.Redacted()
+
+	if len(redacted.Details) != 0 {
+		t.Errorf("expected no details, got %d", len(redacted.Details))
 	}
 }

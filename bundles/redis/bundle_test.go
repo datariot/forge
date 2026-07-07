@@ -4,6 +4,8 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -407,5 +409,120 @@ func TestRedisHealthCheck_Readiness_Success(t *testing.T) {
 
 	if err := check.Readiness(context.Background()); err != nil {
 		t.Errorf("expected Readiness to succeed, got: %v", err)
+	}
+}
+
+// --- RateLimiter ---
+
+// TestRateLimitMember_UniqueForSameTimestamp is the deterministic regression
+// test for the undercounting bug: Allow() itself calls time.Now() internally
+// (it has no injectable clock), so two calls landing on the exact same
+// nanosecond can't be reliably reproduced through Allow() in a unit test.
+// Instead this exercises rateLimitMember directly with a fixed timestamp,
+// which is exactly the scenario that used to collapse two ZADD entries into
+// one: with the old `ZADD key now now` scheme, member == score, so two calls
+// sharing a timestamp shared a member too.
+func TestRateLimitMember_UniqueForSameTimestamp(t *testing.T) {
+	now := time.Unix(0, 1_700_000_000_000_000_000)
+
+	m1 := rateLimitMember(now, 1234, 1)
+	m2 := rateLimitMember(now, 1234, 2)
+
+	if m1 == m2 {
+		t.Fatalf("expected distinct members for the same timestamp, got %q twice", m1)
+	}
+
+	// Different processes (e.g. two service replicas) must also stay distinct
+	// even if their sequence counters happen to line up.
+	m3 := rateLimitMember(now, 5678, 1)
+	if m3 == m1 {
+		t.Fatalf("expected distinct members across pids, got %q twice", m1)
+	}
+}
+
+// TestRateLimiter_Allow_EnforcesLimit is a live-Redis regression test
+// confirming that Allow() still enforces the configured limit (i.e. the
+// member-uniqueness fix didn't break ZCARD-based counting, which keys off
+// score/window trimming rather than the member value).
+func TestRateLimiter_Allow_EnforcesLimit(t *testing.T) {
+	client := newLiveTestClient(t)
+	ctx := context.Background()
+
+	limiter := &RateLimiter{
+		client: client,
+		prefix: fmt.Sprintf("test:ratelimit:%d", time.Now().UnixNano()),
+	}
+	key := "user-1"
+	fullKey := fmt.Sprintf("%s:%s", limiter.prefix, key)
+	defer client.Del(ctx, fullKey)
+
+	const limit = 3
+	for i := 0; i < limit; i++ {
+		allowed, err := limiter.Allow(ctx, key, limit, time.Minute)
+		if err != nil {
+			t.Fatalf("unexpected error on request %d: %v", i, err)
+		}
+		if !allowed {
+			t.Fatalf("expected request %d to be allowed", i)
+		}
+	}
+
+	allowed, err := limiter.Allow(ctx, key, limit, time.Minute)
+	if err != nil {
+		t.Fatalf("unexpected error on over-limit request: %v", err)
+	}
+	if allowed {
+		t.Fatal("expected request beyond the limit to be denied")
+	}
+}
+
+// TestRateLimiter_Allow_ConcurrentDistinctMembers fires many concurrent Allow
+// calls at a high limit and verifies the underlying ZSET ends up with one
+// member per accepted call. Under the old `ZADD key now now` scheme,
+// concurrent calls landing on the same nanosecond would silently collapse
+// into fewer ZSET members than calls made, undercounting usage.
+func TestRateLimiter_Allow_ConcurrentDistinctMembers(t *testing.T) {
+	client := newLiveTestClient(t)
+	ctx := context.Background()
+
+	limiter := &RateLimiter{
+		client: client,
+		prefix: fmt.Sprintf("test:ratelimit-concurrent:%d", time.Now().UnixNano()),
+	}
+	key := "burst"
+	fullKey := fmt.Sprintf("%s:%s", limiter.prefix, key)
+	defer client.Del(ctx, fullKey)
+
+	const calls = 50
+	const limit = calls * 2 // generous limit: every call should be allowed
+
+	var wg sync.WaitGroup
+	var allowedCount int64
+	for i := 0; i < calls; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			allowed, err := limiter.Allow(ctx, key, limit, time.Minute)
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if allowed {
+				atomic.AddInt64(&allowedCount, 1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if allowedCount != calls {
+		t.Fatalf("expected all %d calls to be allowed, got %d", calls, allowedCount)
+	}
+
+	card, err := client.ZCard(ctx, fullKey).Result()
+	if err != nil {
+		t.Fatalf("ZCard failed: %v", err)
+	}
+	if card != calls {
+		t.Errorf("expected %d distinct ZSET members (one per allowed call), got %d — members collapsed under concurrent load", calls, card)
 	}
 }

@@ -6,6 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
 	"github.com/datariot/forge/errors"
 )
 
@@ -640,5 +645,197 @@ func TestValidateServiceIdentifier_TooLong(t *testing.T) {
 func TestValidateServiceIdentifier_InvalidChars(t *testing.T) {
 	if err := validateServiceIdentifier("svc@invalid!"); err == nil {
 		t.Error("expected error for identifier with invalid characters")
+	}
+}
+
+// fakeServerStream is a minimal grpc.ServerStream whose Context() is
+// controllable, used to drive StreamServerInterceptor in tests.
+type fakeServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (f *fakeServerStream) Context() context.Context { return f.ctx }
+
+// TestBundle_StreamServerInterceptor_RejectsMissingToken returns
+// Unauthenticated when the stream context carries no metadata.
+func TestBundle_StreamServerInterceptor_RejectsMissingToken(t *testing.T) {
+	b := newValidBundle()
+	interceptor := b.StreamServerInterceptor()
+
+	stream := &fakeServerStream{ctx: context.Background()}
+	handlerCalled := false
+	handler := func(srv interface{}, ss grpc.ServerStream) error {
+		handlerCalled = true
+		return nil
+	}
+
+	err := interceptor(nil, stream, &grpc.StreamServerInfo{}, handler)
+	if err == nil {
+		t.Fatal("expected error for missing token")
+	}
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("expected Unauthenticated, got %v", status.Code(err))
+	}
+	if handlerCalled {
+		t.Error("expected handler not to be called")
+	}
+}
+
+// TestBundle_StreamServerInterceptor_RejectsInvalidToken returns
+// Unauthenticated when the token fails validation.
+func TestBundle_StreamServerInterceptor_RejectsInvalidToken(t *testing.T) {
+	b := newValidBundle()
+	interceptor := b.StreamServerInterceptor()
+
+	md := metadata.Pairs("authorization", "Bearer not-a-real-token")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	stream := &fakeServerStream{ctx: ctx}
+	handlerCalled := false
+	handler := func(srv interface{}, ss grpc.ServerStream) error {
+		handlerCalled = true
+		return nil
+	}
+
+	err := interceptor(nil, stream, &grpc.StreamServerInfo{}, handler)
+	if err == nil {
+		t.Fatal("expected error for invalid token")
+	}
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("expected Unauthenticated, got %v", status.Code(err))
+	}
+	if handlerCalled {
+		t.Error("expected handler not to be called")
+	}
+}
+
+// TestBundle_StreamServerInterceptor_AcceptsValidToken calls the handler with
+// a wrapped stream whose Context() carries the authenticated claims.
+func TestBundle_StreamServerInterceptor_AcceptsValidToken(t *testing.T) {
+	b := newValidBundle()
+	interceptor := b.StreamServerInterceptor()
+
+	token, err := b.GenerateToken("svc-123", "test-service", []string{"read"})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	md := metadata.Pairs("authorization", "Bearer "+token)
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	stream := &fakeServerStream{ctx: ctx}
+
+	var gotClaims *ServiceClaims
+	handler := func(srv interface{}, ss grpc.ServerStream) error {
+		gotClaims = ClaimsFromContext(ss.Context())
+		return nil
+	}
+
+	if err := interceptor(nil, stream, &grpc.StreamServerInfo{}, handler); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if gotClaims == nil {
+		t.Fatal("expected claims to be present in wrapped stream context")
+	}
+	if gotClaims.ServiceID != "svc-123" {
+		t.Errorf("expected ServiceID='svc-123', got %q", gotClaims.ServiceID)
+	}
+}
+
+// TestBundle_RequireHTTPS_UntrustedProxyHeader_ForgedHeaderIgnored verifies
+// that a forged X-Forwarded-Proto header does not satisfy RequireHTTPS when
+// TrustedProxyHeader is left at its default (false).
+func TestBundle_RequireHTTPS_UntrustedProxyHeader_ForgedHeaderIgnored(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SecretKey = []byte("this-is-a-32-byte-secret-key!!!!")
+	cfg.ServiceName = "test-service"
+	cfg.Issuer = "test-issuer"
+	cfg.Audience = "test-audience"
+	cfg.RequireHTTPS = true
+	// TrustedProxyHeader defaults to false.
+	b := NewBundle(cfg)
+
+	handlerCalled := false
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handlerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := b.HTTPMiddleware(inner)
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/data", nil)
+	req.Header.Set("X-Forwarded-Proto", "https") // forged by an untrusted client
+	w := newResponseRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 (HTTPS required), got %d", w.Code)
+	}
+	if handlerCalled {
+		t.Error("expected handler not to be called when forged header is ignored")
+	}
+}
+
+// TestBundle_RequireHTTPS_TrustedProxyHeader_HonorsForwardedProto verifies
+// that setting TrustedProxyHeader=true honors X-Forwarded-Proto, preserving
+// existing behavior for operators behind a trusted terminating proxy.
+func TestBundle_RequireHTTPS_TrustedProxyHeader_HonorsForwardedProto(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SecretKey = []byte("this-is-a-32-byte-secret-key!!!!")
+	cfg.ServiceName = "test-service"
+	cfg.Issuer = "test-issuer"
+	cfg.Audience = "test-audience"
+	cfg.RequireHTTPS = true
+	cfg.TrustedProxyHeader = true
+	b := NewBundle(cfg)
+
+	token, err := b.GenerateToken("svc-123", "test-service", nil)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	handlerCalled := false
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handlerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := b.HTTPMiddleware(inner)
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/data", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := newResponseRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if !handlerCalled {
+		t.Error("expected handler to be called when trusted proxy header indicates https")
+	}
+}
+
+// TestBundle_RequireHTTPS_TrustedProxyHeader_StillRejectsPlainHTTP verifies
+// that enabling TrustedProxyHeader doesn't disable enforcement outright.
+func TestBundle_RequireHTTPS_TrustedProxyHeader_StillRejectsPlainHTTP(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SecretKey = []byte("this-is-a-32-byte-secret-key!!!!")
+	cfg.ServiceName = "test-service"
+	cfg.Issuer = "test-issuer"
+	cfg.Audience = "test-audience"
+	cfg.RequireHTTPS = true
+	cfg.TrustedProxyHeader = true
+	b := NewBundle(cfg)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := b.HTTPMiddleware(inner)
+
+	req, _ := http.NewRequest(http.MethodGet, "/api/data", nil)
+	// No X-Forwarded-Proto and no TLS.
+	w := newResponseRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 (HTTPS required), got %d", w.Code)
 	}
 }

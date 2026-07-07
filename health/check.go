@@ -176,6 +176,18 @@ func (r CheckResult) IsHealthy() bool {
 	return r.Status == StatusHealthy
 }
 
+// Redacted returns a copy of the CheckResult with the raw Error detail
+// removed. Error strings from dependency checks (e.g. database or cache
+// connectivity failures) can embed internal topology such as hostnames,
+// IPs, and ports, so they must not be exposed over unauthenticated
+// interfaces like the public HTTP health endpoints. The check name and
+// Status remain, which is all an external caller needs; the full detail
+// is still available internally (e.g. to the background runner's logs).
+func (r CheckResult) Redacted() CheckResult {
+	r.Error = ""
+	return r
+}
+
 // BasicCheck provides a simple implementation of Check interface.
 type BasicCheck struct {
 	config        CheckConfig

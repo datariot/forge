@@ -3,14 +3,17 @@ package framework
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
 
 	"github.com/datariot/forge/config"
+	forgeHealth "github.com/datariot/forge/health"
 )
 
 // TestApp_HandleReady_NotReady tests readiness when service not marked ready
@@ -49,6 +52,64 @@ func TestApp_HandleReady_NotReady(t *testing.T) {
 
 	if response["status"] == "healthy" {
 		t.Error("Expected status to not be 'healthy' when service not ready")
+	}
+}
+
+// TestApp_HealthEndpoints_RedactErrorDetail verifies that a failing
+// dependency check's raw error (which can embed internal hostnames, IPs,
+// and ports) never reaches the unauthenticated /health and /health/ready
+// HTTP responses, while the overall unhealthy verdict is still reported.
+func TestApp_HealthEndpoints_RedactErrorDetail(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "redact-test"
+	cfg.GRPCAddr = ":0"
+	cfg.HTTPAddr = ":0"
+
+	app, err := New(WithConfig(&cfg))
+	if err != nil {
+		t.Fatalf("failed to create app: %v", err)
+	}
+
+	const leakyErr = "dial tcp 10.0.1.5:5432: connect: connection refused"
+	leaky := forgeHealth.NewAlwaysUnhealthyCheck("postgres", errors.New(leakyErr))
+	if err := app.healthRegistry.Register(leaky, forgeHealth.DefaultCheckConfig("postgres")); err != nil {
+		t.Fatalf("failed to register health check: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		path    string
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{"health", "/health", app.handleHealth},
+		{"ready", "/health/ready", app.handleReady},
+		{"live", "/health/live", app.handleLive},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			w := httptest.NewRecorder()
+			tc.handler(w, req)
+
+			resp := w.Result()
+			if resp.StatusCode != http.StatusServiceUnavailable {
+				t.Errorf("expected 503 for unhealthy required check, got %d", resp.StatusCode)
+			}
+
+			body := w.Body.String()
+			if strings.Contains(body, "10.0.1.5:5432") {
+				t.Errorf("expected response body to not leak raw dependency error, got: %s", body)
+			}
+
+			var parsed map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &parsed); err != nil {
+				t.Fatalf("failed to parse JSON response: %v", err)
+			}
+			if parsed["status"] == "healthy" {
+				t.Error("expected overall status to reflect the unhealthy required check")
+			}
+		})
 	}
 }
 

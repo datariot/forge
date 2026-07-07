@@ -858,7 +858,7 @@ func (a *App) startHTTPServer(ctx context.Context) error {
 // handleHealth handles the /health endpoint.
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	status := a.healthRegistry.CheckHealth(ctx)
+	status := a.healthRegistry.CheckHealth(ctx).Redacted()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status.HTTPStatus())
@@ -873,7 +873,7 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 // handleReady handles the /health/ready endpoint.
 func (a *App) handleReady(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	status := a.healthRegistry.CheckReadiness(ctx)
+	status := a.healthRegistry.CheckReadiness(ctx).Redacted()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status.HTTPStatus())
@@ -888,7 +888,7 @@ func (a *App) handleReady(w http.ResponseWriter, r *http.Request) {
 // handleLive handles the /health/live endpoint.
 func (a *App) handleLive(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	status := a.healthRegistry.CheckLiveness(ctx)
+	status := a.healthRegistry.CheckLiveness(ctx).Redacted()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status.HTTPStatus())

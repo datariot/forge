@@ -151,6 +151,13 @@ type Config struct {
 	// Secure credential provider (replaces plain text APIKey)
 	CredentialProvider CredentialProvider // Provider for secure credential access
 
+	// AllowedHosts optionally restricts requests (including RawRequest and
+	// resolved BaseURL+path lookups) to this set of hosts. This is opt-in
+	// defense-in-depth against SSRF for services that pass user-influenced
+	// URLs or paths through the client. Empty/nil (default) preserves the
+	// existing unrestricted behavior.
+	AllowedHosts []string
+
 	// Retry configuration
 	RetryConfig RetryConfig
 
@@ -370,8 +377,9 @@ func (b *Bundle) Initialize(app *framework.App) error {
 
 	// Create HTTP client
 	httpClient := &http.Client{
-		Transport: transport,
-		Timeout:   b.config.Timeout,
+		Transport:     transport,
+		Timeout:       b.config.Timeout,
+		CheckRedirect: redirectHeaderStripper(b.config.APIKeyHeader),
 	}
 
 	// Create enhanced client wrapper
@@ -409,6 +417,34 @@ func (b *Bundle) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return b.Stop(ctx)
+}
+
+// maxRedirects matches the net/http default redirect limit.
+const maxRedirects = 10
+
+// redirectHeaderStripper returns an http.Client CheckRedirect function that
+// removes credential headers whenever a redirect crosses to a different host.
+// Go's default redirect handling already strips "Authorization" on cross-host
+// redirects but forwards custom headers like the configured API-key header
+// unchanged, allowing a malicious or compromised upstream to harvest
+// credentials via a 302 to an attacker-controlled host. Same-host redirects
+// are unaffected and continue to carry auth headers as before.
+func redirectHeaderStripper(apiKeyHeader string) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+
+		prev := via[len(via)-1]
+		if prev.URL.Host != req.URL.Host {
+			req.Header.Del("Authorization")
+			if apiKeyHeader != "" {
+				req.Header.Del(apiKeyHeader)
+			}
+		}
+
+		return nil
+	}
 }
 
 // createBackoffStrategy creates the configured backoff strategy.
@@ -475,6 +511,7 @@ func (e *HTTPError) IsRetryableError() bool {
 var (
 	ErrCircuitBreakerOpen = stderrors.New("circuit breaker is open")
 	ErrMaxRetriesExceeded = stderrors.New("maximum retries exceeded")
+	ErrHostNotAllowed     = stderrors.New("host not allowed")
 )
 
 // Get performs a GET request and unmarshals the response into dest.
@@ -503,6 +540,10 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 	fullURL, err := c.buildURL(path)
 	if err != nil {
 		return fmt.Errorf("failed to build URL: %w", err)
+	}
+
+	if err := c.checkHostAllowed(fullURL); err != nil {
+		return err
 	}
 
 	// Execute request with circuit breaker protection
@@ -722,7 +763,7 @@ func (c *Client) sanitizeURLForLogging(rawURL string) string {
 func (c *Client) logRequestError(method, url string, duration time.Duration, err error) {
 	c.logger.Error().
 		Str("method", method).
-		Str("url", url).
+		Str("url", c.sanitizeURLForLogging(url)).
 		Dur("duration", duration).
 		Err(err).
 		Msg("HTTP Request Error")
@@ -745,6 +786,32 @@ func (c *Client) buildURL(path string) (string, error) {
 	}
 
 	return baseURL.ResolveReference(pathURL).String(), nil
+}
+
+// checkHostAllowed validates rawURL's host against config.AllowedHosts. It is
+// an opt-in SSRF safeguard: when AllowedHosts is empty (the default), every
+// host is permitted, preserving existing behavior. When non-empty, requests
+// to any other host are rejected with ErrHostNotAllowed. This covers both the
+// shared request path (buildURL results, which may be overridden by an
+// absolute path) and RawRequest, where the caller supplies the URL directly.
+func (c *Client) checkHostAllowed(rawURL string) error {
+	if len(c.config.AllowedHosts) == 0 {
+		return nil
+	}
+
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	host := parsedURL.Hostname()
+	for _, allowed := range c.config.AllowedHosts {
+		if host == allowed {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
 }
 
 // addAuthHeaders adds authentication headers to the request.
@@ -823,6 +890,10 @@ func (b *Bundle) EnableJWTIntegration(jwtBundle interface{}) error {
 
 // RawRequest performs a raw HTTP request with full control over request/response.
 func (c *Client) RawRequest(ctx context.Context, method, url string, headers map[string]string, body io.Reader) (*http.Response, error) {
+	if err := c.checkHostAllowed(url); err != nil {
+		return nil, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)

@@ -38,8 +38,14 @@
 //
 //	// Server side (automatic token validation)
 //	app, err := framework.New(
-//		framework.WithGRPCInterceptor(jwtBundle.UnaryServerInterceptor()),
+//		framework.WithUnaryInterceptor(jwtBundle.UnaryServerInterceptor()),
+//		framework.WithStreamInterceptor(jwtBundle.StreamServerInterceptor()),
 //	)
+//
+// The framework maintains separate interceptor chains for unary and streaming
+// RPCs. Registering only UnaryServerInterceptor leaves server-streaming and
+// bidirectional-streaming methods completely unauthenticated — always register
+// both interceptors together.
 //
 // # HTTP Authentication
 //
@@ -114,6 +120,14 @@ type Config struct {
 
 	// RequireHTTPS enforces HTTPS for HTTP authentication (recommended for production).
 	RequireHTTPS bool
+
+	// TrustedProxyHeader controls whether the X-Forwarded-Proto header is
+	// trusted to satisfy RequireHTTPS. It defaults to false: by default only
+	// the actual connection (req.TLS != nil) is consulted, since any client
+	// can forge X-Forwarded-Proto. Set this to true only when the service
+	// sits behind a trusted, terminating reverse proxy that overwrites (never
+	// merely appends to) this header before requests reach the service.
+	TrustedProxyHeader bool
 
 	// SkipPaths are HTTP paths that don't require authentication.
 	SkipPaths []string
@@ -300,23 +314,36 @@ func (b *Bundle) validateClaims(claims *ServiceClaims) error {
 	return nil
 }
 
+// authenticateContext extracts and validates a JWT token from gRPC metadata
+// on ctx, returning the resulting claims. Both UnaryServerInterceptor and
+// StreamServerInterceptor call this so their authentication logic cannot
+// drift apart.
+func (b *Bundle) authenticateContext(ctx context.Context) (*ServiceClaims, error) {
+	// Extract token from gRPC metadata
+	token, err := b.extractTokenFromMetadata(ctx)
+	if err != nil {
+		// Log detailed error for debugging, return generic error to client
+		// TODO: Add proper logging when logger is available
+		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
+	}
+
+	// Validate token
+	claims, err := b.ValidateToken(token)
+	if err != nil {
+		// Log detailed error for debugging, return generic error to client
+		// TODO: Add proper logging when logger is available
+		return nil, status.Errorf(codes.Unauthenticated, "invalid credentials")
+	}
+
+	return claims, nil
+}
+
 // UnaryServerInterceptor returns a gRPC server interceptor for JWT authentication.
 func (b *Bundle) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		// Extract token from gRPC metadata
-		token, err := b.extractTokenFromMetadata(ctx)
+		claims, err := b.authenticateContext(ctx)
 		if err != nil {
-			// Log detailed error for debugging, return generic error to client
-			// TODO: Add proper logging when logger is available
-			return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-		}
-
-		// Validate token
-		claims, err := b.ValidateToken(token)
-		if err != nil {
-			// Log detailed error for debugging, return generic error to client
-			// TODO: Add proper logging when logger is available
-			return nil, status.Errorf(codes.Unauthenticated, "invalid credentials")
+			return nil, err
 		}
 
 		// Add claims to context
@@ -324,6 +351,39 @@ func (b *Bundle) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 
 		return handler(ctx, req)
 	}
+}
+
+// StreamServerInterceptor returns a gRPC stream server interceptor for JWT
+// authentication. It performs the same token extraction and validation as
+// UnaryServerInterceptor, but reads the token from the stream's context
+// (grpc.ServerStream.Context()) and injects claims into a wrapped stream so
+// handlers can retrieve them via ClaimsFromContext.
+func (b *Bundle) StreamServerInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		claims, err := b.authenticateContext(ss.Context())
+		if err != nil {
+			return err
+		}
+
+		wrapped := &wrappedServerStream{
+			ServerStream: ss,
+			ctx:          b.contextWithClaims(ss.Context(), claims),
+		}
+
+		return handler(srv, wrapped)
+	}
+}
+
+// wrappedServerStream wraps a grpc.ServerStream to override its Context(),
+// allowing authenticated claims to be injected for stream handlers.
+type wrappedServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+// Context returns the wrapped context carrying authenticated claims.
+func (w *wrappedServerStream) Context() context.Context {
+	return w.ctx
 }
 
 // UnaryClientInterceptor returns a gRPC client interceptor for JWT token injection.
@@ -363,8 +423,10 @@ func (b *Bundle) HTTPMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Enforce HTTPS in production if configured
-		if b.config.RequireHTTPS && r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
+		// Enforce HTTPS in production if configured. Only consult
+		// X-Forwarded-Proto when TrustedProxyHeader is set — otherwise a
+		// client could forge the header to bypass this check.
+		if b.config.RequireHTTPS && !b.isRequestHTTPS(r) {
 			http.Error(w, "HTTPS required", http.StatusBadRequest)
 			return
 		}
@@ -467,6 +529,17 @@ func (b *Bundle) shouldSkipPath(path string) bool {
 	}
 
 	return false
+}
+
+// isRequestHTTPS reports whether the request should be treated as HTTPS for
+// RequireHTTPS enforcement. It trusts the X-Forwarded-Proto header only when
+// TrustedProxyHeader is enabled; otherwise it relies solely on the actual
+// connection state, since the header can be forged by any client.
+func (b *Bundle) isRequestHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return b.config.TrustedProxyHeader && r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 // contextWithClaims adds JWT claims to the context.

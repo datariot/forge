@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/datariot/forge/config"
 )
 
 // --- HTTPServerConfig.Validate tests ---
@@ -300,6 +302,239 @@ func TestCORSMiddleware_NoOriginHeader(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200 for request without Origin, got %d", w.Code)
+	}
+}
+
+func TestCORSMiddleware_ReflectedOrigin_SetsVaryOrigin(t *testing.T) {
+	builder := &HTTPServerBuilder{
+		config: HTTPServerConfig{
+			EnableCORS:      true,
+			CORSOrigins:     []string{"https://example.com"},
+			CORSMethods:     []string{"GET"},
+			CORSHeaders:     []string{"Content-Type"},
+			CORSCredentials: false,
+		},
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := builder.corsMiddleware(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/api", nil)
+	req.Header.Set("Origin", "https://example.com")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if !containsValue(w.Header().Values("Vary"), "Origin") {
+		t.Errorf("expected Vary header to include Origin, got %v", w.Header().Values("Vary"))
+	}
+}
+
+func TestCORSMiddleware_ReflectedOrigin_AppendsToExistingVary(t *testing.T) {
+	builder := &HTTPServerBuilder{
+		config: HTTPServerConfig{
+			EnableCORS:      true,
+			CORSOrigins:     []string{"https://example.com"},
+			CORSMethods:     []string{"GET"},
+			CORSHeaders:     []string{"Content-Type"},
+			CORSCredentials: false,
+		},
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Accept-Encoding")
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := builder.corsMiddleware(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/api", nil)
+	req.Header.Set("Origin", "https://example.com")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	vary := w.Header().Values("Vary")
+	if !containsValue(vary, "Origin") || !containsValue(vary, "Accept-Encoding") {
+		t.Errorf("expected Vary to contain both Origin and Accept-Encoding, got %v", vary)
+	}
+}
+
+func TestCORSMiddleware_WildcardOrigin_NoVaryHeader(t *testing.T) {
+	builder := &HTTPServerBuilder{
+		config: HTTPServerConfig{
+			EnableCORS:      true,
+			CORSOrigins:     []string{"*"},
+			CORSMethods:     []string{"GET"},
+			CORSHeaders:     []string{"Content-Type"},
+			CORSCredentials: false,
+		},
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := builder.corsMiddleware(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/api", nil)
+	req.Header.Set("Origin", "https://any.example.com")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if vary := w.Header().Get("Vary"); vary != "" {
+		t.Errorf("expected no Vary header for wildcard origin, got %q", vary)
+	}
+}
+
+func containsValue(values []string, target string) bool {
+	for _, v := range values {
+		if v == target {
+			return true
+		}
+	}
+	return false
+}
+
+// --- Metrics basic auth tests ---
+
+func newTestBuilder(t *testing.T, env string, httpCfg HTTPServerConfig) *HTTPServerBuilder {
+	t.Helper()
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "http-test"
+	cfg.AppEnv = env
+
+	app, err := New(WithConfig(&cfg))
+	if err != nil {
+		t.Fatalf("failed to create app: %v", err)
+	}
+
+	return NewHTTPServerBuilder(app, httpCfg)
+}
+
+func TestRegisterMetricsEndpoint_OpenWhenAuthUnset(t *testing.T) {
+	builder := newTestBuilder(t, "development", DefaultHTTPServerConfig())
+	builder.registerMetricsEndpoint()
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	builder.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected metrics endpoint to be open when credentials are unset, got %d", w.Code)
+	}
+}
+
+func TestRegisterMetricsEndpoint_RejectsWrongCredentials(t *testing.T) {
+	httpCfg := DefaultHTTPServerConfig()
+	httpCfg.MetricsBasicAuthUser = "prom"
+	httpCfg.MetricsBasicAuthPass = "s3cret"
+
+	builder := newTestBuilder(t, "development", httpCfg)
+	builder.registerMetricsEndpoint()
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.SetBasicAuth("prom", "wrong-password")
+	w := httptest.NewRecorder()
+	builder.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for wrong credentials, got %d", w.Code)
+	}
+}
+
+func TestRegisterMetricsEndpoint_RejectsMissingCredentials(t *testing.T) {
+	httpCfg := DefaultHTTPServerConfig()
+	httpCfg.MetricsBasicAuthUser = "prom"
+	httpCfg.MetricsBasicAuthPass = "s3cret"
+
+	builder := newTestBuilder(t, "development", httpCfg)
+	builder.registerMetricsEndpoint()
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	builder.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with no credentials, got %d", w.Code)
+	}
+}
+
+func TestRegisterMetricsEndpoint_AcceptsCorrectCredentials(t *testing.T) {
+	httpCfg := DefaultHTTPServerConfig()
+	httpCfg.MetricsBasicAuthUser = "prom"
+	httpCfg.MetricsBasicAuthPass = "s3cret"
+
+	builder := newTestBuilder(t, "development", httpCfg)
+	builder.registerMetricsEndpoint()
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.SetBasicAuth("prom", "s3cret")
+	w := httptest.NewRecorder()
+	builder.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for correct credentials, got %d", w.Code)
+	}
+}
+
+func TestConstantTimeEqual(t *testing.T) {
+	if !constantTimeEqual("secret", "secret") {
+		t.Error("expected equal strings to compare equal")
+	}
+	if constantTimeEqual("secret", "different") {
+		t.Error("expected different strings to compare unequal")
+	}
+	if constantTimeEqual("secret", "secretlonger") {
+		t.Error("expected different-length strings to compare unequal")
+	}
+}
+
+// --- Pprof environment gating tests ---
+
+func TestRegisterPprofEndpoints_BlockedInStaging(t *testing.T) {
+	httpCfg := DefaultHTTPServerConfig()
+	builder := newTestBuilder(t, "staging", httpCfg)
+	builder.app.config.EnablePprof = true
+
+	builder.registerPprofEndpoints()
+
+	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
+	w := httptest.NewRecorder()
+	builder.mux.ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK {
+		t.Error("expected pprof endpoints to be blocked in staging even with EnablePprof=true")
+	}
+}
+
+func TestRegisterPprofEndpoints_BlockedInProduction(t *testing.T) {
+	httpCfg := DefaultHTTPServerConfig()
+	builder := newTestBuilder(t, "production", httpCfg)
+	builder.app.config.EnablePprof = true
+
+	builder.registerPprofEndpoints()
+
+	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
+	w := httptest.NewRecorder()
+	builder.mux.ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK {
+		t.Error("expected pprof endpoints to be blocked in production even with EnablePprof=true")
+	}
+}
+
+func TestRegisterPprofEndpoints_AllowedInDevelopment(t *testing.T) {
+	httpCfg := DefaultHTTPServerConfig()
+	builder := newTestBuilder(t, "development", httpCfg)
+	builder.app.config.EnablePprof = true
+
+	builder.registerPprofEndpoints()
+
+	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
+	w := httptest.NewRecorder()
+	builder.mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected pprof endpoints reachable in development, got %d", w.Code)
 	}
 }
 

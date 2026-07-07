@@ -184,6 +184,47 @@ func TestNewCheckResult_Unhealthy(t *testing.T) {
 	}
 }
 
+// --- CheckResult.Redacted tests ---
+
+func TestCheckResult_Redacted_StripsError(t *testing.T) {
+	result := NewCheckResult("postgres", true, 10*time.Millisecond, errors.New("dial tcp 10.0.1.5:5432: connect: connection refused"))
+
+	redacted := result.Redacted()
+
+	if redacted.Error != "" {
+		t.Errorf("expected redacted Error to be empty, got %q", redacted.Error)
+	}
+	if redacted.Name != result.Name {
+		t.Errorf("expected Name to be preserved, got %q", redacted.Name)
+	}
+	if redacted.Status != result.Status {
+		t.Errorf("expected Status to be preserved, got %q", redacted.Status)
+	}
+	if redacted.Required != result.Required {
+		t.Error("expected Required to be preserved")
+	}
+	if redacted.Duration != result.Duration {
+		t.Errorf("expected Duration to be preserved, got %q", redacted.Duration)
+	}
+	// Original result must be unaffected.
+	if result.Error == "" {
+		t.Error("expected original CheckResult.Error to remain populated")
+	}
+}
+
+func TestCheckResult_Redacted_HealthyUnaffected(t *testing.T) {
+	result := NewCheckResult("db", true, time.Millisecond, nil)
+
+	redacted := result.Redacted()
+
+	if redacted.Message != "OK" {
+		t.Errorf("expected message 'OK' preserved, got %q", redacted.Message)
+	}
+	if !redacted.IsHealthy() {
+		t.Error("expected redacted healthy result to remain healthy")
+	}
+}
+
 // --- DefaultCheckConfig tests ---
 
 func TestDefaultCheckConfig(t *testing.T) {
