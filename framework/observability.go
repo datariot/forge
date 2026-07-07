@@ -21,7 +21,9 @@ import (
 	"github.com/datariot/forge/config"
 )
 
-// ObservabilityConfig contains configuration for observability (tracing, metrics).
+// ObservabilityConfig contains the settings used to initialize OpenTelemetry
+// tracing and metrics: the service's identity (name, version, environment),
+// the OTLP collector endpoint to export to, and the trace sampling rate.
 type ObservabilityConfig struct {
 	ServiceName    string
 	ServiceVersion string
@@ -30,7 +32,9 @@ type ObservabilityConfig struct {
 	SampleRate     float64
 }
 
-// NewObservabilityConfig creates a new observability config from base config.
+// NewObservabilityConfig derives an ObservabilityConfig from the
+// application's BaseConfig and the given service version, copying over the
+// service name, environment, OTEL endpoint, and sample rate.
 func NewObservabilityConfig(baseConfig *config.BaseConfig, version string) *ObservabilityConfig {
 	return &ObservabilityConfig{
 		ServiceName:    baseConfig.ServiceName,
@@ -41,7 +45,11 @@ func NewObservabilityConfig(baseConfig *config.BaseConfig, version string) *Obse
 	}
 }
 
-// ObservabilityManager manages OpenTelemetry tracing and metrics.
+// ObservabilityManager owns the OpenTelemetry tracing and metrics providers
+// for the life of the application. Call Initialize once during startup to
+// wire up exporters from the manager's config, use Tracer and Meter to
+// obtain instrumentation handles, and call Shutdown during graceful
+// shutdown to flush pending telemetry and release exporter resources.
 type ObservabilityManager struct {
 	config        *ObservabilityConfig
 	traceProvider *trace.TracerProvider
@@ -49,14 +57,21 @@ type ObservabilityManager struct {
 	initialized   bool
 }
 
-// NewObservabilityManager creates a new observability manager.
+// NewObservabilityManager creates an ObservabilityManager for the given
+// configuration. The returned manager is not yet initialized; call
+// Initialize before relying on Tracer or Meter to return non-no-op
+// instrumentation.
 func NewObservabilityManager(config *ObservabilityConfig) *ObservabilityManager {
 	return &ObservabilityManager{
 		config: config,
 	}
 }
 
-// Initialize sets up OpenTelemetry tracing and metrics.
+// Initialize sets up OpenTelemetry tracing and metrics using the manager's
+// configuration. It is idempotent: once initialization has succeeded,
+// subsequent calls return nil without doing any work. The App calls this
+// automatically during Start, before bundles are initialized, so components
+// and bundles can safely assume tracing/metrics are ready by the time they run.
 func (om *ObservabilityManager) Initialize(ctx context.Context) error {
 	if om.initialized {
 		return nil
@@ -206,7 +221,10 @@ func (om *ObservabilityManager) initializeMetrics(ctx context.Context) error {
 	return nil
 }
 
-// Shutdown gracefully shuts down the observability components.
+// Shutdown flushes and shuts down the trace and meter providers created by
+// Initialize, returning a joined error if either fails to shut down
+// cleanly. It is a no-op if Initialize was never called or did not
+// complete successfully.
 func (om *ObservabilityManager) Shutdown(ctx context.Context) error {
 	if !om.initialized {
 		return nil
@@ -236,7 +254,12 @@ func (om *ObservabilityManager) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// Tracer returns a tracer for the given name.
+// Tracer returns an OpenTelemetry Tracer for the given instrumentation name
+// (conventionally the calling package or component name). Use it to start
+// spans around units of work you want traced, e.g.
+// om.Tracer("myservice").Start(ctx, "operation-name"). If Initialize has not
+// configured a trace provider (no OTEL endpoint set), this falls back to the
+// global otel.Tracer, which produces no-op spans rather than erroring.
 func (om *ObservabilityManager) Tracer(name string) oteltrace.Tracer {
 	if om.traceProvider == nil {
 		return otel.Tracer(name)
@@ -244,7 +267,12 @@ func (om *ObservabilityManager) Tracer(name string) oteltrace.Tracer {
 	return om.traceProvider.Tracer(name)
 }
 
-// Meter returns a meter for the given name.
+// Meter returns an OpenTelemetry Meter for the given instrumentation name
+// (conventionally the calling package or component name). Use it to create
+// instruments — counters, histograms, gauges, etc. — for recording metrics.
+// If Initialize has not configured a meter provider (no OTEL endpoint set),
+// this falls back to the global otel.Meter, which produces no-op
+// instruments rather than erroring.
 func (om *ObservabilityManager) Meter(name string) otelmetric.Meter {
 	if om.meterProvider == nil {
 		return otel.Meter(name)

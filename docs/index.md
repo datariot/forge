@@ -123,7 +123,7 @@ Forge follows Clean Architecture principles with these key concepts:
 - Automatic HTTP/gRPC metrics collection
 - Health check monitoring and alerting
 - Distributed tracing with OpenTelemetry
-- Pre-built Grafana dashboards
+- A starter Grafana dashboard
 
 ## Getting Started
 

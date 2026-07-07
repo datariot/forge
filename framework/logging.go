@@ -10,20 +10,31 @@ import (
 	"github.com/datariot/forge/config"
 )
 
-// LoggingManager manages logging configuration and provides logger instances.
+// LoggingManager owns the application's zerolog configuration and hands out
+// logger instances tagged with service and component context. Call
+// Initialize before using Logger, WithService, or WithContext so the
+// underlying logger has its output format (pretty console in development,
+// JSON in production) and log level configured.
 type LoggingManager struct {
 	config *config.BaseConfig
 	logger zerolog.Logger
 }
 
-// NewLoggingManager creates a new logging manager with the given configuration.
+// NewLoggingManager creates a LoggingManager bound to the given
+// configuration. The returned manager's logger is not yet configured; call
+// Initialize before using it.
 func NewLoggingManager(config *config.BaseConfig) *LoggingManager {
 	return &LoggingManager{
 		config: config,
 	}
 }
 
-// Initialize sets up the logging configuration.
+// Initialize configures the manager's base logger from its BaseConfig: it
+// sets the global zerolog level (falling back to Info if LogLevel doesn't
+// parse), switches between a human-readable console writer in development
+// and JSON output otherwise, and tags every log line with the service name
+// and environment. The App calls this automatically during New, before
+// observability and bundles are initialized.
 func (lm *LoggingManager) Initialize() error {
 	// Set global log level based on configuration
 	level, err := zerolog.ParseLevel(lm.config.LogLevel)
@@ -53,12 +64,15 @@ func (lm *LoggingManager) Initialize() error {
 	return nil
 }
 
-// Logger returns the base logger instance.
+// Logger returns a pointer to the manager's base zerolog.Logger, already
+// tagged with service and environment fields by Initialize.
 func (lm *LoggingManager) Logger() *zerolog.Logger {
 	return &lm.logger
 }
 
-// WithService creates a logger with service and component context.
+// WithService returns a copy of the base logger with additional "service"
+// and "component" fields attached, for use by a specific subsystem (e.g. the
+// gRPC or HTTP server) so its log lines can be filtered independently.
 func (lm *LoggingManager) WithService(service, component string) zerolog.Logger {
 	return lm.logger.With().
 		Str("service", service).
@@ -66,7 +80,10 @@ func (lm *LoggingManager) WithService(service, component string) zerolog.Logger 
 		Logger()
 }
 
-// WithContext creates a logger with additional context fields.
+// WithContext returns a copy of the base logger with an arbitrary set of
+// key-value fields attached, one call to Interface per map entry, for
+// callers that need structured fields beyond the fixed service/component
+// pair provided by WithService.
 func (lm *LoggingManager) WithContext(fields map[string]any) zerolog.Logger {
 	ctx := lm.logger.With()
 	for key, value := range fields {
@@ -75,7 +92,10 @@ func (lm *LoggingManager) WithContext(fields map[string]any) zerolog.Logger {
 	return ctx.Logger()
 }
 
-// NewHealthLogger creates a logger adapter for the health system.
+// NewHealthLogger wraps a LoggingManager in an adapter satisfying the
+// health package's logger interface, so the health registry's background
+// checks log through the same structured, service-tagged zerolog output as
+// the rest of the application instead of a separate logging path.
 func NewHealthLogger(logging *LoggingManager) *healthLoggerAdapter {
 	return &healthLoggerAdapter{
 		logger: logging.WithService(logging.config.ServiceName, "health"),
