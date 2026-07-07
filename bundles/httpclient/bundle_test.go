@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -824,6 +825,130 @@ func TestClient_AllowedHosts_PermitsRequestToAllowedHost(t *testing.T) {
 	}
 	if !result["ok"] {
 		t.Error("expected ok=true")
+	}
+}
+
+// --- AllowedHosts blocks redirects to disallowed hosts (residual SSRF gap) ---
+
+// localhostRedirectTarget rewrites rawURL (an httptest server URL, which uses
+// the literal "127.0.0.1" host) to use the "localhost" hostname instead,
+// keeping the same port. "localhost" resolves to the same loopback address,
+// so the connection still succeeds, but the request's URL.Hostname() now
+// differs textually from a "127.0.0.1"-hosted server, letting tests exercise
+// AllowedHosts across two distinct-looking hosts without needing real DNS.
+func localhostRedirectTarget(t *testing.T, rawURL, path string) string {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("failed to parse URL %q: %v", rawURL, err)
+	}
+	return "http://localhost:" + parsed.Port() + path
+}
+
+func TestClient_AllowedHosts_BlocksRedirectToDisallowedHost(t *testing.T) {
+	var targetReached bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetReached = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, localhostRedirectTarget(t, target.URL, "/dest"), http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	redirectorURL, err := url.Parse(redirector.URL)
+	if err != nil {
+		t.Fatalf("failed to parse redirector URL: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.BaseURL = redirector.URL
+	cfg.RetryConfig.MaxRetries = 0
+	cfg.CircuitBreakerConfig.Name = "test-allowedhosts-blocks-redirect"
+	// Only the initial host is allowed; the redirect target is a different host.
+	cfg.AllowedHosts = []string{redirectorURL.Hostname()}
+
+	b := NewBundle(cfg)
+	if err := b.Initialize(nil); err != nil {
+		t.Fatalf("failed to initialize bundle: %v", err)
+	}
+
+	err = b.Client().Get(context.Background(), "/start", nil)
+	if !errors.Is(err, ErrHostNotAllowed) {
+		t.Fatalf("expected errors.Is(err, ErrHostNotAllowed), got %v", err)
+	}
+	if targetReached {
+		t.Error("expected disallowed redirect target to never be reached")
+	}
+}
+
+func TestClient_AllowedHosts_PermitsRedirectToAllowedHost(t *testing.T) {
+	var targetReached bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetReached = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, localhostRedirectTarget(t, target.URL, "/dest"), http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	redirectorURL, err := url.Parse(redirector.URL)
+	if err != nil {
+		t.Fatalf("failed to parse redirector URL: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.BaseURL = redirector.URL
+	cfg.RetryConfig.MaxRetries = 0
+	cfg.CircuitBreakerConfig.Name = "test-allowedhosts-permits-redirect"
+	cfg.AllowedHosts = []string{redirectorURL.Hostname(), "localhost"}
+
+	b := NewBundle(cfg)
+	if err := b.Initialize(nil); err != nil {
+		t.Fatalf("failed to initialize bundle: %v", err)
+	}
+
+	if err := b.Client().Get(context.Background(), "/start", nil); err != nil {
+		t.Fatalf("unexpected error following allowed redirect: %v", err)
+	}
+	if !targetReached {
+		t.Error("expected redirect target to be reached")
+	}
+}
+
+func TestClient_AllowedHosts_NilPermitsRedirectToAnyHost(t *testing.T) {
+	var targetReached bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetReached = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, localhostRedirectTarget(t, target.URL, "/dest"), http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	cfg := DefaultConfig()
+	cfg.BaseURL = redirector.URL
+	cfg.RetryConfig.MaxRetries = 0
+	cfg.CircuitBreakerConfig.Name = "test-allowedhosts-nil-redirect"
+
+	b := NewBundle(cfg)
+	if err := b.Initialize(nil); err != nil {
+		t.Fatalf("failed to initialize bundle: %v", err)
+	}
+
+	if err := b.Client().Get(context.Background(), "/start", nil); err != nil {
+		t.Fatalf("unexpected error following redirect with nil AllowedHosts: %v", err)
+	}
+	if !targetReached {
+		t.Error("expected redirect target to be reached")
 	}
 }
 

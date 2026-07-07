@@ -379,7 +379,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 	httpClient := &http.Client{
 		Transport:     transport,
 		Timeout:       b.config.Timeout,
-		CheckRedirect: redirectHeaderStripper(b.config.APIKeyHeader),
+		CheckRedirect: redirectHeaderStripper(b.config.APIKeyHeader, b.config.AllowedHosts),
 	}
 
 	// Create enhanced client wrapper
@@ -423,16 +423,25 @@ func (b *Bundle) Close() error {
 const maxRedirects = 10
 
 // redirectHeaderStripper returns an http.Client CheckRedirect function that
-// removes credential headers whenever a redirect crosses to a different host.
-// Go's default redirect handling already strips "Authorization" on cross-host
-// redirects but forwards custom headers like the configured API-key header
-// unchanged, allowing a malicious or compromised upstream to harvest
-// credentials via a 302 to an attacker-controlled host. Same-host redirects
-// are unaffected and continue to carry auth headers as before.
-func redirectHeaderStripper(apiKeyHeader string) func(*http.Request, []*http.Request) error {
+// removes credential headers whenever a redirect crosses to a different host,
+// and, when allowedHosts is non-empty, rejects redirects to a host outside
+// that allowlist. Go's default redirect handling already strips
+// "Authorization" on cross-host redirects but forwards custom headers like
+// the configured API-key header unchanged, allowing a malicious or
+// compromised upstream to harvest credentials via a 302 to an
+// attacker-controlled host. Same-host redirects are unaffected and continue
+// to carry auth headers as before. The allowlist check closes a related gap:
+// checkHostAllowed only validates the initial request URL, so without this,
+// a redirect could still be followed to a disallowed host (with credentials
+// stripped) even when AllowedHosts is configured.
+func redirectHeaderStripper(apiKeyHeader string, allowedHosts []string) func(*http.Request, []*http.Request) error {
 	return func(req *http.Request, via []*http.Request) error {
 		if len(via) >= maxRedirects {
 			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+
+		if !hostAllowed(req.URL.Hostname(), allowedHosts) {
+			return fmt.Errorf("redirect to %w: %s", ErrHostNotAllowed, req.URL.Hostname())
 		}
 
 		prev := via[len(via)-1]
@@ -794,6 +803,8 @@ func (c *Client) buildURL(path string) (string, error) {
 // to any other host are rejected with ErrHostNotAllowed. This covers both the
 // shared request path (buildURL results, which may be overridden by an
 // absolute path) and RawRequest, where the caller supplies the URL directly.
+// Redirect targets are separately enforced by redirectHeaderStripper via the
+// same hostAllowed helper, since this check only sees the initial URL.
 func (c *Client) checkHostAllowed(rawURL string) error {
 	if len(c.config.AllowedHosts) == 0 {
 		return nil
@@ -805,13 +816,26 @@ func (c *Client) checkHostAllowed(rawURL string) error {
 	}
 
 	host := parsedURL.Hostname()
-	for _, allowed := range c.config.AllowedHosts {
-		if host == allowed {
-			return nil
-		}
+	if !hostAllowed(host, c.config.AllowedHosts) {
+		return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
 	}
 
-	return fmt.Errorf("%w: %s", ErrHostNotAllowed, host)
+	return nil
+}
+
+// hostAllowed reports whether host is permitted under allowedHosts. An empty
+// allowedHosts means unrestricted (everything is allowed), matching the
+// opt-in nature of the AllowedHosts config field.
+func hostAllowed(host string, allowedHosts []string) bool {
+	if len(allowedHosts) == 0 {
+		return true
+	}
+	for _, allowed := range allowedHosts {
+		if host == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 // addAuthHeaders adds authentication headers to the request.

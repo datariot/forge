@@ -726,3 +726,87 @@ func TestApp_WithStreamInterceptor_Valid(t *testing.T) {
 		t.Errorf("expected 1 stream interceptor, got %d", len(app.streamInterceptors))
 	}
 }
+
+func TestApp_WithLogging_Nil(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "test-service"
+
+	_, err := New(WithConfig(&cfg), WithLogging(nil))
+	if err == nil {
+		t.Fatal("expected error for nil logging manager")
+	}
+	if !strings.Contains(err.Error(), "logging manager cannot be nil") {
+		t.Errorf("expected 'logging manager cannot be nil', got %q", err.Error())
+	}
+}
+
+func TestApp_WithLogging_Valid(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "test-service"
+
+	custom := NewLoggingManager(&cfg)
+
+	app, err := New(WithConfig(&cfg), WithLogging(custom))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if app.Logger() != custom {
+		t.Error("expected app.Logger() to return the injected logging manager")
+	}
+}
+
+func TestApp_WithObservability_Nil(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "test-service"
+
+	_, err := New(WithConfig(&cfg), WithObservability(nil))
+	if err == nil {
+		t.Fatal("expected error for nil observability manager")
+	}
+	if !strings.Contains(err.Error(), "observability manager cannot be nil") {
+		t.Errorf("expected 'observability manager cannot be nil', got %q", err.Error())
+	}
+}
+
+func TestApp_WithObservability_Valid(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "test-service"
+
+	custom := NewObservabilityManager(NewObservabilityConfig(&cfg, "test-1.0.0"))
+
+	app, err := New(WithConfig(&cfg), WithObservability(custom))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if app.Observability() != custom {
+		t.Error("expected app.Observability() to return the injected observability manager")
+	}
+}
+
+func TestApp_WithHealthRegistry_Nil(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "test-service"
+
+	_, err := New(WithConfig(&cfg), WithHealthRegistry(nil))
+	if err == nil {
+		t.Fatal("expected error for nil health registry")
+	}
+	if !strings.Contains(err.Error(), "health registry cannot be nil") {
+		t.Errorf("expected 'health registry cannot be nil', got %q", err.Error())
+	}
+}
+
+func TestApp_WithHealthRegistry_Valid(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "test-service"
+
+	custom := forgeHealth.NewRegistry(NewHealthLogger(NewLoggingManager(&cfg)))
+
+	app, err := New(WithConfig(&cfg), WithHealthRegistry(custom))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if app.HealthRegistry() != custom {
+		t.Error("expected app.HealthRegistry() to return the injected health registry")
+	}
+}
