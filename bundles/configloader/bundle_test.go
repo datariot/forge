@@ -409,10 +409,10 @@ func TestLoaderLoadFromString_UnsupportedFormat(t *testing.T) {
 	}
 }
 
-// TestLoaderGetConfigInfo tests the GetConfigInfo method.
-func TestLoaderGetConfigInfo(t *testing.T) {
+// TestLoaderConfigInfo tests the ConfigInfo method.
+func TestLoaderConfigInfo(t *testing.T) {
 	l := loaderWithConfig(DefaultConfig())
-	info := l.GetConfigInfo()
+	info := l.ConfigInfo()
 
 	if info["config_paths"] == nil {
 		t.Error("expected config_paths in info")
@@ -426,7 +426,7 @@ func TestLoaderGetConfigInfo(t *testing.T) {
 func TestLoaderOnConfigChange(t *testing.T) {
 	l := loaderWithConfig(DefaultConfig())
 	called := 0
-	l.OnConfigChange(func(cfg interface{}) {
+	l.OnConfigChange(func(cfg any) {
 		called++
 	})
 	if len(l.changeCallbacks) != 1 {
@@ -721,7 +721,7 @@ func TestLoadFromFile_RelativePath(t *testing.T) {
 
 	l := loaderWithConfig(DefaultConfig())
 
-	var dest map[string]interface{}
+	var dest map[string]any
 	if err := l.loadFromFile(relPath, &dest); err != nil {
 		t.Errorf("loadFromFile with relative path failed: %v", err)
 	}
@@ -790,7 +790,7 @@ func TestMustLoadConfig_Panics(t *testing.T) {
 	}()
 	// Force a config with a required file that doesn't exist
 	// Use a path that definitely doesn't exist
-	MustLoadConfig[map[string]interface{}]("/nonexistent/path/that/does/not/exist.yaml")
+	MustLoadConfig[map[string]any]("/nonexistent/path/that/does/not/exist.yaml")
 }
 
 func TestLooksLikeSensitiveData_JWTToken(t *testing.T) {

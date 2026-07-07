@@ -479,7 +479,7 @@ func TestCreateCustomCounter_TooManyLabels(t *testing.T) {
 
 // --- Metrics handler tests ---
 
-func TestGetMetricsHandler(t *testing.T) {
+func TestMetricsHandler(t *testing.T) {
 	cfg := Config{
 		Namespace:         "test",
 		EnableHTTPMetrics: true,
@@ -488,7 +488,7 @@ func TestGetMetricsHandler(t *testing.T) {
 	}
 	b := newInitializedBundle(t, cfg)
 
-	handler := b.GetMetricsHandler()
+	handler := b.MetricsHandler()
 	if handler == nil {
 		t.Fatal("expected non-nil handler")
 	}
@@ -502,7 +502,7 @@ func TestGetMetricsHandler(t *testing.T) {
 	}
 }
 
-func TestGetSecureMetricsHandler_BasicAuth(t *testing.T) {
+func TestSecureMetricsHandler_BasicAuth(t *testing.T) {
 	cfg := Config{
 		Namespace:        "test",
 		HistogramBuckets: []float64{0.01, 0.1},
@@ -517,7 +517,7 @@ func TestGetSecureMetricsHandler_BasicAuth(t *testing.T) {
 		Username:            "admin",
 		Password:            "secret",
 	}
-	handler := b.GetSecureMetricsHandler(secConfig)
+	handler := b.SecureMetricsHandler(secConfig)
 
 	t.Run("missing credentials returns 401", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)

@@ -141,7 +141,7 @@ func (s *AuthenticatedService) setupHTTPEndpoints(mux *http.ServeMux, jwtBundle 
 
 // handlePublic handles public endpoints that don't require authentication.
 func (s *AuthenticatedService) handlePublic(w http.ResponseWriter, r *http.Request) {
-	response := map[string]interface{}{
+	response := map[string]any{
 		"message": "This is a public endpoint",
 		"service": s.config.ServiceName,
 		"time":    time.Now().UTC(),
@@ -160,7 +160,7 @@ func (s *AuthenticatedService) handleProtected(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"message":               "This is a protected endpoint",
 		"service":               s.config.ServiceName,
 		"authenticated_service": claims.ServiceName,
@@ -181,7 +181,7 @@ func (s *AuthenticatedService) handleAdmin(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"message":               "This is an admin endpoint",
 		"service":               s.config.ServiceName,
 		"authenticated_service": claims.ServiceName,
@@ -227,7 +227,7 @@ func (s *AuthenticatedService) handleGenerateToken(w http.ResponseWriter, r *htt
 		return
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"token":      token,
 		"service_id": request.ServiceID,
 		"expires_in": "24h",

@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/datariot/forge/errors"
+	"github.com/datariot/forge/forgeerrors"
 )
 
 // TestDefaultConfig tests default configuration values
@@ -178,7 +178,7 @@ func TestBundle_Initialize_InvalidConfig(t *testing.T) {
 		t.Fatal("Expected error for invalid configuration")
 	}
 
-	if !errors.IsConfigurationError(err) {
+	if !forgeerrors.IsConfigurationError(err) {
 		t.Error("Expected configuration error")
 	}
 }
@@ -437,40 +437,40 @@ func TestHasPermission_NoClaims(t *testing.T) {
 	}
 }
 
-// TestGetServiceID tests service ID extraction from context.
-func TestGetServiceID(t *testing.T) {
+// TestServiceID tests service ID extraction from context.
+func TestServiceID(t *testing.T) {
 	b := newValidBundle()
 	token, _ := b.GenerateToken("my-svc", "test-service", nil)
 	claims, _ := b.ValidateToken(token)
 	ctx := b.contextWithClaims(context.Background(), claims)
 
-	if id := GetServiceID(ctx); id != "my-svc" {
+	if id := ServiceID(ctx); id != "my-svc" {
 		t.Errorf("expected 'my-svc', got %q", id)
 	}
 }
 
-// TestGetServiceID_NoClaims returns empty string without claims.
-func TestGetServiceID_NoClaims(t *testing.T) {
-	if id := GetServiceID(context.Background()); id != "" {
+// TestServiceID_NoClaims returns empty string without claims.
+func TestServiceID_NoClaims(t *testing.T) {
+	if id := ServiceID(context.Background()); id != "" {
 		t.Errorf("expected empty string, got %q", id)
 	}
 }
 
-// TestGetServiceName tests service name extraction from context.
-func TestGetServiceName(t *testing.T) {
+// TestServiceName tests service name extraction from context.
+func TestServiceName(t *testing.T) {
 	b := newValidBundle()
 	token, _ := b.GenerateToken("svc-123", "my-service", nil)
 	claims, _ := b.ValidateToken(token)
 	ctx := b.contextWithClaims(context.Background(), claims)
 
-	if name := GetServiceName(ctx); name != "my-service" {
+	if name := ServiceName(ctx); name != "my-service" {
 		t.Errorf("expected 'my-service', got %q", name)
 	}
 }
 
-// TestGetServiceName_NoClaims returns empty string without claims.
-func TestGetServiceName_NoClaims(t *testing.T) {
-	if name := GetServiceName(context.Background()); name != "" {
+// TestServiceName_NoClaims returns empty string without claims.
+func TestServiceName_NoClaims(t *testing.T) {
+	if name := ServiceName(context.Background()); name != "" {
 		t.Errorf("expected empty string, got %q", name)
 	}
 }
@@ -665,7 +665,7 @@ func TestBundle_StreamServerInterceptor_RejectsMissingToken(t *testing.T) {
 
 	stream := &fakeServerStream{ctx: context.Background()}
 	handlerCalled := false
-	handler := func(srv interface{}, ss grpc.ServerStream) error {
+	handler := func(srv any, ss grpc.ServerStream) error {
 		handlerCalled = true
 		return nil
 	}
@@ -692,7 +692,7 @@ func TestBundle_StreamServerInterceptor_RejectsInvalidToken(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), md)
 	stream := &fakeServerStream{ctx: ctx}
 	handlerCalled := false
-	handler := func(srv interface{}, ss grpc.ServerStream) error {
+	handler := func(srv any, ss grpc.ServerStream) error {
 		handlerCalled = true
 		return nil
 	}
@@ -725,7 +725,7 @@ func TestBundle_StreamServerInterceptor_AcceptsValidToken(t *testing.T) {
 	stream := &fakeServerStream{ctx: ctx}
 
 	var gotClaims *ServiceClaims
-	handler := func(srv interface{}, ss grpc.ServerStream) error {
+	handler := func(srv any, ss grpc.ServerStream) error {
 		gotClaims = ClaimsFromContext(ss.Context())
 		return nil
 	}

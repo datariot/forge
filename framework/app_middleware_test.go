@@ -62,7 +62,7 @@ func TestApp_AddUnaryInterceptor_RunsForRealCall(t *testing.T) {
 	}
 
 	called := false
-	app.AddUnaryInterceptor(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	app.AddUnaryInterceptor(func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		called = true
 		return handler(ctx, req)
 	})
@@ -113,7 +113,7 @@ func TestApp_AddUnaryInterceptor_NoopAfterServerBuilt(t *testing.T) {
 	defer func() { _ = app.Stop(context.Background()) }()
 
 	before := len(app.unaryInterceptors)
-	app.AddUnaryInterceptor(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	app.AddUnaryInterceptor(func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		return handler(ctx, req)
 	})
 	if len(app.unaryInterceptors) != before {

@@ -176,7 +176,7 @@ func (s *CacheService) handleCache(w http.ResponseWriter, r *http.Request) {
 
 // handleCacheGet retrieves an item from cache.
 func (s *CacheService) handleCacheGet(w http.ResponseWriter, r *http.Request, key string) {
-	var result interface{}
+	var result any
 	err := s.redisBundle.Cache().Get(r.Context(), key, &result)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -188,7 +188,7 @@ func (s *CacheService) handleCacheGet(w http.ResponseWriter, r *http.Request, ke
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"key":   key,
 		"value": result,
 		"found": true,
@@ -197,7 +197,7 @@ func (s *CacheService) handleCacheGet(w http.ResponseWriter, r *http.Request, ke
 
 // handleCacheSet stores an item in cache.
 func (s *CacheService) handleCacheSet(w http.ResponseWriter, r *http.Request, key, cacheType string) {
-	var data interface{}
+	var data any
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
@@ -222,7 +222,7 @@ func (s *CacheService) handleCacheSet(w http.ResponseWriter, r *http.Request, ke
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"key":    key,
 		"stored": true,
 		"ttl":    ttl.String(),
@@ -237,7 +237,7 @@ func (s *CacheService) handleCacheDelete(w http.ResponseWriter, r *http.Request,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"key":     key,
 		"deleted": true,
 	})
@@ -257,7 +257,7 @@ func (s *CacheService) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var event interface{}
+	var event any
 	if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
@@ -270,7 +270,7 @@ func (s *CacheService) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"channel":   channel,
 		"published": true,
 		"timestamp": time.Now().UTC(),
@@ -297,7 +297,7 @@ func (s *CacheService) handleRateLimited(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"message":    "Request allowed",
 		"client_ip":  clientIP,
 		"timestamp":  time.Now().UTC(),
@@ -326,7 +326,7 @@ func (s *CacheService) handleDistributedLock(w http.ResponseWriter, r *http.Requ
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"resource": resource,
 			"acquired": acquired,
 			"ttl":      "30s",
@@ -340,7 +340,7 @@ func (s *CacheService) handleDistributedLock(w http.ResponseWriter, r *http.Requ
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"resource": resource,
 			"released": true,
 		})
@@ -364,9 +364,9 @@ func (s *CacheService) handleRedisStats(w http.ResponseWriter, r *http.Request) 
 	// Get connection pool stats
 	stats := client.PoolStats()
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"redis_info": strings.Split(info, "\r\n"),
-		"pool_stats": map[string]interface{}{
+		"pool_stats": map[string]any{
 			"hits":        stats.Hits,
 			"misses":      stats.Misses,
 			"timeouts":    stats.Timeouts,
@@ -400,7 +400,7 @@ func (s *CacheService) listenForEvents(ctx context.Context) {
 			log.Printf("Received event: channel=%s, payload=%s", msg.Channel, msg.Payload)
 
 			// Process event (in a real application, you might parse JSON and handle different event types)
-			var event map[string]interface{}
+			var event map[string]any
 			if err := json.Unmarshal([]byte(msg.Payload), &event); err == nil {
 				log.Printf("Processed event: %+v", event)
 			}
@@ -433,7 +433,7 @@ func (c *CacheServiceHealthCheck) Liveness(ctx context.Context) error {
 func (c *CacheServiceHealthCheck) Readiness(ctx context.Context) error {
 	// Test cache operations
 	testKey := "health:readiness:test"
-	testValue := map[string]interface{}{
+	testValue := map[string]any{
 		"timestamp": time.Now().UTC(),
 		"service":   "cache-service",
 	}
@@ -444,7 +444,7 @@ func (c *CacheServiceHealthCheck) Readiness(ctx context.Context) error {
 	}
 
 	// Test get operation
-	var retrieved map[string]interface{}
+	var retrieved map[string]any
 	if err := c.cache.Get(ctx, testKey, &retrieved); err != nil {
 		return fmt.Errorf("cache get operation failed: %w", err)
 	}

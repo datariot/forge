@@ -143,7 +143,7 @@ Each bundle provides:
 - Graceful cleanup in `Stop()` method
 - Production-ready defaults
 
-### Error Handling (`errors/`)
+### Error Handling (`forgeerrors/`)
 Domain error patterns and classification utilities for consistent error handling across services.
 
 ### Observability (`framework/observability.go`, `framework/logging.go`)
@@ -230,7 +230,7 @@ forge/
 ├── config/             # Configuration management (BaseConfig, validation, env detection)
 ├── health/             # Health check system (registry, status, concurrent execution)
 ├── bundles/            # Pre-built integrations (postgresql, redis, jwt, etc.)
-├── errors/             # Error handling utilities
+├── forgeerrors/        # Error handling utilities
 ├── examples/           # Example service implementations
 ├── docs/               # GitHub Pages documentation site (Jekyll)
 ├── testutil/           # Testing utilities (assertions, test configs, zerolog test logger)

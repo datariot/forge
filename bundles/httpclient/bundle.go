@@ -69,7 +69,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -82,7 +82,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/sony/gobreaker"
 
-	"github.com/datariot/forge/errors"
+	"github.com/datariot/forge/forgeerrors"
 	"github.com/datariot/forge/framework"
 )
 
@@ -113,7 +113,7 @@ func NewStaticCredentialProvider(apiKey, jwtToken string) *StaticCredentialProvi
 // GetAPIKey returns the static API key.
 func (p *StaticCredentialProvider) GetAPIKey(ctx context.Context) (string, error) {
 	if p.apiKey == "" {
-		return "", stderrors.New("no API key configured")
+		return "", errors.New("no API key configured")
 	}
 	return p.apiKey, nil
 }
@@ -121,7 +121,7 @@ func (p *StaticCredentialProvider) GetAPIKey(ctx context.Context) (string, error
 // GetJWTToken returns the static JWT token.
 func (p *StaticCredentialProvider) GetJWTToken(ctx context.Context) (string, error) {
 	if p.jwtToken == "" {
-		return "", stderrors.New("no JWT token configured")
+		return "", errors.New("no JWT token configured")
 	}
 	return p.jwtToken, nil
 }
@@ -272,7 +272,7 @@ func (c *Config) Validate() error {
 
 	// Validate circuit breaker configuration
 	if c.CircuitBreakerConfig.MaxRequests == 0 {
-		return stderrors.New("circuit breaker max_requests must be positive")
+		return errors.New("circuit breaker max_requests must be positive")
 	}
 	if c.CircuitBreakerConfig.Interval <= 0 {
 		return fmt.Errorf("circuit breaker interval must be positive, got %v", c.CircuitBreakerConfig.Interval)
@@ -312,7 +312,7 @@ func (b *Bundle) Name() string {
 // Initialize sets up the HTTP client with all configured features.
 func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.config.Validate(); err != nil {
-		return errors.ErrInvalidConfiguration.WithMessage("HTTP client configuration validation failed").WithCause(err)
+		return forgeerrors.ErrInvalidConfiguration.WithMessage("HTTP client configuration validation failed").WithCause(err)
 	}
 
 	if app != nil {
@@ -518,23 +518,23 @@ func (e *HTTPError) IsRetryableError() bool {
 
 // Common errors
 var (
-	ErrCircuitBreakerOpen = stderrors.New("circuit breaker is open")
-	ErrMaxRetriesExceeded = stderrors.New("maximum retries exceeded")
-	ErrHostNotAllowed     = stderrors.New("host not allowed")
+	ErrCircuitBreakerOpen = errors.New("circuit breaker is open")
+	ErrMaxRetriesExceeded = errors.New("maximum retries exceeded")
+	ErrHostNotAllowed     = errors.New("host not allowed")
 )
 
 // Get performs a GET request and unmarshals the response into dest.
-func (c *Client) Get(ctx context.Context, path string, dest interface{}) error {
+func (c *Client) Get(ctx context.Context, path string, dest any) error {
 	return c.request(ctx, http.MethodGet, path, nil, dest)
 }
 
 // Post performs a POST request with the given body and unmarshals the response into dest.
-func (c *Client) Post(ctx context.Context, path string, body interface{}, dest interface{}) error {
+func (c *Client) Post(ctx context.Context, path string, body any, dest any) error {
 	return c.request(ctx, http.MethodPost, path, body, dest)
 }
 
 // Put performs a PUT request with the given body and unmarshals the response into dest.
-func (c *Client) Put(ctx context.Context, path string, body interface{}, dest interface{}) error {
+func (c *Client) Put(ctx context.Context, path string, body any, dest any) error {
 	return c.request(ctx, http.MethodPut, path, body, dest)
 }
 
@@ -544,7 +544,7 @@ func (c *Client) Delete(ctx context.Context, path string) error {
 }
 
 // request performs an HTTP request with retries, circuit breaker, and observability.
-func (c *Client) request(ctx context.Context, method, path string, body interface{}, dest interface{}) error {
+func (c *Client) request(ctx context.Context, method, path string, body any, dest any) error {
 	// Build full URL
 	fullURL, err := c.buildURL(path)
 	if err != nil {
@@ -556,13 +556,13 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 	}
 
 	// Execute request with circuit breaker protection
-	_, err = c.circuitBreaker.Execute(func() (interface{}, error) {
+	_, err = c.circuitBreaker.Execute(func() (any, error) {
 		return nil, c.executeWithRetry(ctx, method, fullURL, body, dest)
 	})
 
 	if err != nil {
 		// Check if circuit breaker is open
-		if stderrors.Is(err, gobreaker.ErrOpenState) {
+		if errors.Is(err, gobreaker.ErrOpenState) {
 			return ErrCircuitBreakerOpen
 		}
 		return err
@@ -572,7 +572,7 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 }
 
 // executeWithRetry executes an HTTP request with retry logic.
-func (c *Client) executeWithRetry(ctx context.Context, method, url string, body interface{}, dest interface{}) error {
+func (c *Client) executeWithRetry(ctx context.Context, method, url string, body any, dest any) error {
 	operation := func() error {
 		return c.executeRequest(ctx, method, url, body, dest)
 	}
@@ -585,7 +585,7 @@ func (c *Client) executeWithRetry(ctx context.Context, method, url string, body 
 	if lastErr != nil {
 		// Distinguish context cancellation/deadline from genuine retry exhaustion
 		// so callers can detect cancellation instead of misreading it as exhaustion.
-		if stderrors.Is(lastErr, context.Canceled) || stderrors.Is(lastErr, context.DeadlineExceeded) {
+		if errors.Is(lastErr, context.Canceled) || errors.Is(lastErr, context.DeadlineExceeded) {
 			return fmt.Errorf("request context ended: %w", lastErr)
 		}
 		return fmt.Errorf("%w: %w", ErrMaxRetriesExceeded, lastErr)
@@ -595,7 +595,7 @@ func (c *Client) executeWithRetry(ctx context.Context, method, url string, body 
 }
 
 // executeRequest executes a single HTTP request with logging and metrics.
-func (c *Client) executeRequest(ctx context.Context, method, url string, body interface{}, dest interface{}) error {
+func (c *Client) executeRequest(ctx context.Context, method, url string, body any, dest any) error {
 	start := time.Now()
 
 	// Prepare request body
@@ -647,7 +647,7 @@ func (c *Client) executeRequest(ctx context.Context, method, url string, body in
 
 		// Check if error is retryable
 		var netErr net.Error
-		if stderrors.As(err, &netErr) && netErr.Timeout() {
+		if errors.As(err, &netErr) && netErr.Timeout() {
 			return err // Retryable timeout error
 		}
 		return backoff.Permanent(err) // Non-retryable error
@@ -768,7 +768,7 @@ func (c *Client) sanitizeURLForLogging(rawURL string) string {
 	return parsedURL.String()
 }
 
-// logRequestError logs HTTP request errors.
+// logRequestError logs HTTP request forgeerrors.
 func (c *Client) logRequestError(method, url string, duration time.Duration, err error) {
 	c.logger.Error().
 		Str("method", method).
@@ -875,13 +875,13 @@ func (c *Client) addAuthHeaders(ctx context.Context, req *http.Request) error {
 // validateJWTToken performs basic JWT token validation.
 func (c *Client) validateJWTToken(token string) error {
 	if token == "" {
-		return stderrors.New("token cannot be empty")
+		return errors.New("token cannot be empty")
 	}
 
 	// Basic JWT format validation (header.payload.signature)
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return stderrors.New("invalid JWT token format")
+		return errors.New("invalid JWT token format")
 	}
 
 	// Additional validation would be performed by JWT bundle
@@ -905,7 +905,7 @@ func getJWTTokenFromContext(ctx context.Context) string {
 }
 
 // EnableJWTIntegration creates a client option that automatically injects JWT tokens.
-func (b *Bundle) EnableJWTIntegration(jwtBundle interface{}) error {
+func (b *Bundle) EnableJWTIntegration(jwtBundle any) error {
 	// This would be called during bundle initialization to integrate with JWT bundle
 	// For now, JWT tokens can be manually added to context using WithJWTToken
 	b.config.EnableJWTAuth = true
@@ -939,12 +939,12 @@ func (c *Client) RawRequest(ctx context.Context, method, url string, headers map
 	}
 
 	// Execute with circuit breaker but without automatic retries
-	result, err := c.circuitBreaker.Execute(func() (interface{}, error) {
+	result, err := c.circuitBreaker.Execute(func() (any, error) {
 		return c.httpClient.Do(req)
 	})
 
 	if err != nil {
-		if stderrors.Is(err, gobreaker.ErrOpenState) {
+		if errors.Is(err, gobreaker.ErrOpenState) {
 			return nil, ErrCircuitBreakerOpen
 		}
 		return nil, err
@@ -956,7 +956,7 @@ func (c *Client) RawRequest(ctx context.Context, method, url string, headers map
 // HealthCheck performs health checks for the HTTP client.
 func (c *Client) HealthCheck(ctx context.Context, healthURL string) error {
 	if healthURL == "" {
-		return stderrors.New("health check URL not configured")
+		return errors.New("health check URL not configured")
 	}
 
 	// Perform a simple GET request to health endpoint
@@ -976,12 +976,12 @@ func (c *Client) HealthCheck(ctx context.Context, healthURL string) error {
 	return nil
 }
 
-// GetCircuitBreakerState returns the current circuit breaker state.
-func (c *Client) GetCircuitBreakerState() gobreaker.State {
+// CircuitBreakerState returns the current circuit breaker state.
+func (c *Client) CircuitBreakerState() gobreaker.State {
 	return c.circuitBreaker.State()
 }
 
-// GetCircuitBreakerCounts returns the current circuit breaker counts.
-func (c *Client) GetCircuitBreakerCounts() gobreaker.Counts {
+// CircuitBreakerCounts returns the current circuit breaker counts.
+func (c *Client) CircuitBreakerCounts() gobreaker.Counts {
 	return c.circuitBreaker.Counts()
 }

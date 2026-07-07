@@ -150,9 +150,9 @@ registry.Register(check, config)
 **Methods:**
 
 - `Register(Check, CheckConfig) error` - Register health check
-- `CheckLiveness(context.Context) HealthStatus` - Check liveness
-- `CheckReadiness(context.Context) HealthStatus` - Check readiness
-- `CheckHealth(context.Context) HealthStatus` - Check overall health
+- `CheckLiveness(context.Context) Report` - Check liveness
+- `CheckReadiness(context.Context) Report` - Check readiness
+- `CheckHealth(context.Context) Report` - Check overall health
 
 ### Built-in Checks
 
@@ -160,7 +160,7 @@ registry.Register(check, config)
 - `NewAlwaysUnhealthyCheck(name, err)` - Always reports unhealthy
 - `NewBasicCheck(config, liveness, readiness)` - Custom check functions
 
-## Error Handling (`errors`)
+## Error Handling (`forgeerrors`)
 
 ### DomainError
 
@@ -284,7 +284,7 @@ mux.Handle("/admin/", bundle.RequirePermissions("admin")(adminHandler))
 
 // Access claims in handlers
 claims := jwt.ClaimsFromContext(ctx)
-serviceID := jwt.GetServiceID(ctx)
+serviceID := jwt.ServiceID(ctx)
 hasPermission := jwt.HasPermission(ctx, "read:users")
 ```
 
@@ -315,8 +315,8 @@ err := client.Post(ctx, "/users", createRequest, &response)
 resp, err := client.RawRequest(ctx, "GET", "/custom", headers, body)
 
 // Circuit breaker monitoring
-state := client.GetCircuitBreakerState()
-counts := client.GetCircuitBreakerCounts()
+state := client.CircuitBreakerState()
+counts := client.CircuitBreakerCounts()
 ```
 
 ### Prometheus Bundle
@@ -349,7 +349,7 @@ bundle.RecordGRPCRequest("UserService.GetUser", "OK", duration)
 bundle.RecordHealthCheck("database", "readiness", true, duration)
 
 // Get metrics handler
-handler := bundle.GetMetricsHandler()
+handler := bundle.MetricsHandler()
 ```
 
 ### Configuration Loading Bundle

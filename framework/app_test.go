@@ -465,7 +465,7 @@ func TestApp_WithUnaryInterceptor_Valid(t *testing.T) {
 	cfg := config.DefaultBaseConfig()
 	cfg.ServiceName = "test-service"
 
-	interceptor := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	interceptor := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		return handler(ctx, req)
 	}
 
@@ -615,7 +615,7 @@ func TestLoggingManager_WithContext(t *testing.T) {
 		t.Fatalf("failed to initialize logging manager: %v", err)
 	}
 
-	logger := lm.WithContext(map[string]interface{}{
+	logger := lm.WithContext(map[string]any{
 		"key1": "value1",
 		"key2": 42,
 	})
@@ -714,7 +714,7 @@ func TestApp_WithStreamInterceptor_Valid(t *testing.T) {
 	cfg := config.DefaultBaseConfig()
 	cfg.ServiceName = "test-service"
 
-	interceptor := func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	interceptor := func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		return handler(srv, ss)
 	}
 

@@ -7,50 +7,50 @@ import (
 	"time"
 )
 
-func TestHealthStatus_IsHealthy(t *testing.T) {
-	healthy := NewHealthyStatus("all good")
+func TestReport_IsHealthy(t *testing.T) {
+	healthy := NewHealthyReport("all good")
 	if !healthy.IsHealthy() {
 		t.Error("expected healthy status to be healthy")
 	}
 
-	unhealthy := NewUnhealthyStatus("broken")
+	unhealthy := NewUnhealthyReport("broken")
 	if unhealthy.IsHealthy() {
 		t.Error("expected unhealthy status to not be healthy")
 	}
 }
 
-func TestHealthStatus_IsReady(t *testing.T) {
-	healthy := NewHealthyStatus("")
+func TestReport_IsReady(t *testing.T) {
+	healthy := NewHealthyReport("")
 	if !healthy.IsReady() {
 		t.Error("expected healthy status to be ready")
 	}
 }
 
-func TestHealthStatus_IsLive(t *testing.T) {
-	healthy := NewHealthyStatus("")
+func TestReport_IsLive(t *testing.T) {
+	healthy := NewHealthyReport("")
 	if !healthy.IsLive() {
 		t.Error("expected healthy status to be live")
 	}
 
-	unknown := NewUnknownStatus("")
+	unknown := NewUnknownReport("")
 	if !unknown.IsLive() {
 		t.Error("expected unknown status to be live (not explicitly unhealthy)")
 	}
 
-	unhealthy := NewUnhealthyStatus("")
+	unhealthy := NewUnhealthyReport("")
 	if unhealthy.IsLive() {
 		t.Error("expected unhealthy status to not be live")
 	}
 }
 
-func TestHealthStatus_HTTPStatus(t *testing.T) {
+func TestReport_HTTPStatus(t *testing.T) {
 	tests := []struct {
-		status   HealthStatus
+		status   Report
 		expected int
 	}{
-		{NewHealthyStatus(""), 200},
-		{NewUnhealthyStatus(""), 503},
-		{NewUnknownStatus(""), 503},
+		{NewHealthyReport(""), 200},
+		{NewUnhealthyReport(""), 503},
+		{NewUnknownReport(""), 503},
 	}
 	for _, tt := range tests {
 		code := tt.status.HTTPStatus()
@@ -60,8 +60,8 @@ func TestHealthStatus_HTTPStatus(t *testing.T) {
 	}
 }
 
-func TestHealthStatus_JSON(t *testing.T) {
-	status := NewHealthyStatus("all good")
+func TestReport_JSON(t *testing.T) {
+	status := NewHealthyReport("all good")
 	data, err := status.JSON()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -71,16 +71,16 @@ func TestHealthStatus_JSON(t *testing.T) {
 	}
 }
 
-func TestHealthStatus_String(t *testing.T) {
-	status := NewHealthyStatus("ok")
+func TestReport_String(t *testing.T) {
+	status := NewHealthyReport("ok")
 	s := status.String()
 	if !strings.Contains(s, "healthy") {
 		t.Errorf("expected String() to contain 'healthy', got: %s", s)
 	}
 }
 
-func TestHealthStatus_FailedChecks(t *testing.T) {
-	status := NewHealthyStatus("")
+func TestReport_FailedChecks(t *testing.T) {
+	status := NewHealthyReport("")
 	status.Details["db"] = NewCheckResult("db", true, time.Millisecond, nil)
 	status.Details["redis"] = NewCheckResult("redis", false, time.Millisecond, errTest("connection refused"))
 
@@ -93,8 +93,8 @@ func TestHealthStatus_FailedChecks(t *testing.T) {
 	}
 }
 
-func TestHealthStatus_RequiredFailedChecks(t *testing.T) {
-	status := NewHealthyStatus("")
+func TestReport_RequiredFailedChecks(t *testing.T) {
+	status := NewHealthyReport("")
 	// required, healthy
 	status.Details["db"] = NewCheckResult("db", true, time.Millisecond, nil)
 	// required, unhealthy
@@ -111,13 +111,13 @@ func TestHealthStatus_RequiredFailedChecks(t *testing.T) {
 	}
 }
 
-func TestHealthStatus_GetHealthySummary(t *testing.T) {
-	status := NewHealthyStatus("")
+func TestReport_HealthySummary(t *testing.T) {
+	status := NewHealthyReport("")
 	status.Details["db"] = NewCheckResult("db", true, time.Millisecond, nil)
 	status.Details["redis"] = NewCheckResult("redis", true, time.Millisecond, errTest("failed"))
 	status.Details["cache"] = NewCheckResult("cache", false, time.Millisecond, nil)
 
-	summary := status.GetHealthySummary()
+	summary := status.HealthySummary()
 	if summary.Total != 3 {
 		t.Errorf("expected Total=3, got %d", summary.Total)
 	}
@@ -132,50 +132,50 @@ func TestHealthStatus_GetHealthySummary(t *testing.T) {
 	}
 }
 
-func TestHealthStatus_WithService(t *testing.T) {
-	status := NewHealthyStatus("").WithService("my-service")
+func TestReport_WithService(t *testing.T) {
+	status := NewHealthyReport("").WithService("my-service")
 	if status.Service != "my-service" {
 		t.Errorf("expected Service='my-service', got %q", status.Service)
 	}
 }
 
-func TestHealthStatus_WithVersion(t *testing.T) {
-	status := NewHealthyStatus("").WithVersion("1.2.3")
+func TestReport_WithVersion(t *testing.T) {
+	status := NewHealthyReport("").WithVersion("1.2.3")
 	if status.Version != "1.2.3" {
 		t.Errorf("expected Version='1.2.3', got %q", status.Version)
 	}
 }
 
-func TestHealthStatus_WithUptime(t *testing.T) {
-	status := NewHealthyStatus("").WithUptime(5 * time.Minute)
+func TestReport_WithUptime(t *testing.T) {
+	status := NewHealthyReport("").WithUptime(5 * time.Minute)
 	if status.Uptime == "" {
 		t.Error("expected non-empty Uptime")
 	}
 }
 
-func TestNewHealthyStatus_EmptyMessage(t *testing.T) {
-	status := NewHealthyStatus("")
+func TestNewHealthyReport_EmptyMessage(t *testing.T) {
+	status := NewHealthyReport("")
 	if status.Message == "" {
 		t.Error("expected default message for empty input")
 	}
 }
 
-func TestNewUnhealthyStatus_EmptyMessage(t *testing.T) {
-	status := NewUnhealthyStatus("")
+func TestNewUnhealthyReport_EmptyMessage(t *testing.T) {
+	status := NewUnhealthyReport("")
 	if status.Message == "" {
 		t.Error("expected default message for empty input")
 	}
 }
 
-func TestNewUnknownStatus_EmptyMessage(t *testing.T) {
-	status := NewUnknownStatus("")
+func TestNewUnknownReport_EmptyMessage(t *testing.T) {
+	status := NewUnknownReport("")
 	if status.Message == "" {
 		t.Error("expected default message for empty input")
 	}
 }
 
 func TestStatusResponse_JSON(t *testing.T) {
-	status := NewHealthyStatus("ok")
+	status := NewHealthyReport("ok")
 	resp := NewStatusResponse(status)
 
 	data, err := resp.JSON()
@@ -235,7 +235,7 @@ func TestCheckResult_IsHealthy(t *testing.T) {
 }
 
 func TestStatusResponse_Creation(t *testing.T) {
-	hs := HealthStatus{
+	hs := Report{
 		Status:  StatusHealthy,
 		Message: "test message",
 	}
@@ -251,10 +251,10 @@ func TestStatusResponse_Creation(t *testing.T) {
 	}
 }
 
-// --- HealthStatus.Redacted tests ---
+// --- Report.Redacted tests ---
 
-func TestHealthStatus_Redacted_StripsCheckErrors(t *testing.T) {
-	status := HealthStatus{
+func TestReport_Redacted_StripsCheckErrors(t *testing.T) {
+	status := Report{
 		Status:  StatusUnhealthy,
 		Message: "One or more checks failed",
 		Details: map[string]CheckResult{
@@ -283,8 +283,8 @@ func TestHealthStatus_Redacted_StripsCheckErrors(t *testing.T) {
 	}
 }
 
-func TestHealthStatus_Redacted_NoDetails(t *testing.T) {
-	status := NewHealthyStatus("")
+func TestReport_Redacted_NoDetails(t *testing.T) {
+	status := NewHealthyReport("")
 
 	redacted := status.Redacted()
 

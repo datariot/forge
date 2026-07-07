@@ -2,7 +2,7 @@ package redis
 
 import (
 	"context"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -11,7 +11,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/datariot/forge/errors"
+	"github.com/datariot/forge/forgeerrors"
 )
 
 // newLiveTestClient returns a Redis client connected to a local test instance,
@@ -99,7 +99,7 @@ func TestBundle_Initialize_MissingRedisURL(t *testing.T) {
 		t.Fatal("Expected error for missing Redis URL")
 	}
 
-	if !errors.IsConfigurationError(err) {
+	if !forgeerrors.IsConfigurationError(err) {
 		t.Error("Expected configuration error")
 	}
 }
@@ -346,7 +346,7 @@ func TestConfig_Validate_EdgeCases(t *testing.T) {
 				t.Error("Expected error but got nil")
 			}
 			// Note: "valid config" will fail without actual Redis, but validates config logic
-			if !tt.wantErr && err != nil && !errors.IsRepositoryError(err) {
+			if !tt.wantErr && err != nil && !forgeerrors.IsRepositoryError(err) {
 				// Only fail if it's NOT a repository error (connection failure is expected)
 				t.Errorf("Expected no validation error but got: %v", err)
 			}
@@ -371,7 +371,7 @@ func TestCacheService_Get_CacheMiss(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing cache key")
 	}
-	if !stderrors.Is(err, ErrCacheMiss) {
+	if !errors.Is(err, ErrCacheMiss) {
 		t.Errorf("expected errors.Is(err, ErrCacheMiss), got %v", err)
 	}
 }

@@ -444,6 +444,6 @@ type promLogAdapter struct {
 }
 
 // Println implements the log.Logger interface for Prometheus error logging.
-func (p *promLogAdapter) Println(v ...interface{}) {
+func (p *promLogAdapter) Println(v ...any) {
 	p.logger.Error().Interface("prometheus_error", v).Msg("Prometheus metrics error")
 }

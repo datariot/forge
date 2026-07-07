@@ -1,6 +1,6 @@
-// Package errors provides domain-specific error handling patterns for Forge microservices.
+// Package forgeerrors provides domain-specific error handling patterns for Forge microservices.
 //
-// The errors package implements structured error handling with error codes, context,
+// The forgeerrors package implements structured error handling with error codes, context,
 // and error classification. It provides common error patterns that can be shared
 // across microservices and enables consistent error handling and reporting.
 //
@@ -9,25 +9,25 @@
 // Use the predefined domain errors and customize with context:
 //
 //	if db.Ping() != nil {
-//		return errors.ErrRepositoryUnavailable.WithMessage("database connection failed")
+//		return forgeerrors.ErrRepositoryUnavailable.WithMessage("database connection failed")
 //	}
 //
 //	// With cause
 //	if err := validateUser(user); err != nil {
-//		return errors.ErrInvalidConfiguration.WithCause(err)
+//		return forgeerrors.ErrInvalidConfiguration.WithCause(err)
 //	}
 //
 // # Error Classification
 //
 // The package provides classification functions for error handling:
 //
-//	if errors.IsTransientError(err) {
+//	if forgeerrors.IsTransientError(err) {
 //		// Retry the operation
 //		time.Sleep(backoff)
 //		return retryOperation()
 //	}
 //
-//	if errors.IsAuthenticationError(err) {
+//	if forgeerrors.IsAuthenticationError(err) {
 //		// Return 401 Unauthorized
 //		return handleAuthError(err)
 //	}
@@ -36,14 +36,14 @@
 //
 // Create service-specific errors using the DomainError pattern:
 //
-//	var ErrUserNotFound = errors.DomainError{
+//	var ErrUserNotFound = forgeerrors.DomainError{
 //		Code:    "USER_NOT_FOUND",
 //		Message: "user not found",
 //	}
 //
 //	// Usage
 //	return ErrUserNotFound.WithMessage("user %s not found", userID)
-package errors
+package forgeerrors
 
 import (
 	"errors"
@@ -86,7 +86,7 @@ func (e DomainError) Error() string {
 }
 
 // WithMessage returns a new DomainError with the specified message
-func (e DomainError) WithMessage(format string, args ...interface{}) DomainError {
+func (e DomainError) WithMessage(format string, args ...any) DomainError {
 	return DomainError{
 		Code:    e.Code,
 		Message: fmt.Sprintf(format, args...),
@@ -203,7 +203,7 @@ var (
 //
 // Use this for implementing retry logic:
 //
-//	if errors.IsTransientError(err) {
+//	if forgeerrors.IsTransientError(err) {
 //		return backoff.Retry(operation, backoff.NewExponentialBackOff())
 //	}
 func IsTransientError(err error) bool {

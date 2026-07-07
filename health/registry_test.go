@@ -374,14 +374,14 @@ func TestRegistry_MustRegister_Panic(t *testing.T) {
 	registry.MustRegister(check, cfg)
 }
 
-func TestRegistry_GetRegisteredChecks(t *testing.T) {
+func TestRegistry_RegisteredChecks(t *testing.T) {
 	registry := NewRegistry(nil)
 	check1 := NewAlwaysHealthyCheck("check-1")
 	check2 := NewAlwaysHealthyCheck("check-2")
 	registry.MustRegister(check1, DefaultCheckConfig("check-1"))
 	registry.MustRegister(check2, DefaultCheckConfig("check-2"))
 
-	names := registry.GetRegisteredChecks()
+	names := registry.RegisteredChecks()
 	if len(names) != 2 {
 		t.Fatalf("expected 2 registered checks, got %d", len(names))
 	}
@@ -394,15 +394,15 @@ func TestRegistry_GetRegisteredChecks(t *testing.T) {
 	}
 }
 
-func TestRegistry_GetCheckConfig(t *testing.T) {
+func TestRegistry_CheckConfig(t *testing.T) {
 	registry := NewRegistry(nil)
 	cfg := DefaultCheckConfig("db")
 	cfg.Required = false
 	registry.MustRegister(NewAlwaysHealthyCheck("db"), cfg)
 
-	got, ok := registry.GetCheckConfig("db")
+	got, ok := registry.CheckConfig("db")
 	if !ok {
-		t.Fatal("expected GetCheckConfig to return true for registered check")
+		t.Fatal("expected CheckConfig to return true for registered check")
 	}
 	if got.Name != "db" {
 		t.Errorf("expected config name 'db', got %q", got.Name)
@@ -411,9 +411,9 @@ func TestRegistry_GetCheckConfig(t *testing.T) {
 		t.Error("expected Required=false")
 	}
 
-	_, ok2 := registry.GetCheckConfig("nonexistent")
+	_, ok2 := registry.CheckConfig("nonexistent")
 	if ok2 {
-		t.Error("expected GetCheckConfig to return false for unknown check")
+		t.Error("expected CheckConfig to return false for unknown check")
 	}
 }
 
@@ -575,7 +575,7 @@ func TestRegistry_Runner_CachesResultsAndServesStaleReads(t *testing.T) {
 	// The second round is now in flight and will block forever (until
 	// ctx/Stop cancellation). A probe read must not wait for it - it
 	// should return the still-healthy result from the first round.
-	done := make(chan HealthStatus, 1)
+	done := make(chan Report, 1)
 	go func() { done <- registry.CheckReadiness(context.Background()) }()
 
 	select {

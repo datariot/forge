@@ -142,7 +142,7 @@ func (s *ConfigService) Start(ctx context.Context) error {
 	log.Printf("ConfigService started with automatic configuration loading")
 
 	// Setup configuration change monitoring
-	s.configBundle.Loader().OnConfigChange(func(newConfig interface{}) {
+	s.configBundle.Loader().OnConfigChange(func(newConfig any) {
 		if cfg, ok := newConfig.(*ServiceConfig); ok {
 			log.Printf("Configuration changed! New debug setting: %v", cfg.Debug)
 			log.Printf("New max connections: %d", cfg.MaxConnections)
@@ -192,14 +192,14 @@ func (s *ConfigService) setupHTTPEndpoints(mux *http.ServeMux) {
 
 // handleConfigInfo returns current configuration information (sanitized).
 func (s *ConfigService) handleConfigInfo(w http.ResponseWriter, r *http.Request) {
-	info := map[string]interface{}{
+	info := map[string]any{
 		"service":         s.config.ServiceName,
 		"environment":     s.config.AppEnv,
 		"debug":           s.config.Debug,
 		"max_connections": s.config.MaxConnections,
 		"cache_timeout":   s.config.CacheTimeout.String(),
 		"features":        s.config.Features,
-		"external_services": map[string]interface{}{
+		"external_services": map[string]any{
 			"user_service_url":  s.config.ExternalServices.UserServiceURL,
 			"email_service_url": s.config.ExternalServices.EmailServiceURL,
 			"timeout":           s.config.ExternalServices.Timeout,
@@ -208,7 +208,7 @@ func (s *ConfigService) handleConfigInfo(w http.ResponseWriter, r *http.Request)
 		"database_url": "[REDACTED]",
 		"api_key":      "[REDACTED]",
 		"jwt_secret":   "[REDACTED]",
-		"load_info":    s.configBundle.Loader().GetConfigInfo(),
+		"load_info":    s.configBundle.Loader().ConfigInfo(),
 		"timestamp":    time.Now().UTC(),
 	}
 
@@ -236,7 +236,7 @@ func (s *ConfigService) handleConfigReload(w http.ResponseWriter, r *http.Reques
 	// Update current config (in a real app, you'd need more sophisticated handling)
 	s.config = &newConfig
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"reloaded":  true,
 		"timestamp": time.Now().UTC(),
 		"load_info": result,
@@ -248,9 +248,9 @@ func (s *ConfigService) handleConfigReload(w http.ResponseWriter, r *http.Reques
 
 // handleConfigSources returns information about configuration sources.
 func (s *ConfigService) handleConfigSources(w http.ResponseWriter, r *http.Request) {
-	sources := map[string]interface{}{
+	sources := map[string]any{
 		"load_result": s.loadResult,
-		"loader_info": s.configBundle.Loader().GetConfigInfo(),
+		"loader_info": s.configBundle.Loader().ConfigInfo(),
 		"timestamp":   time.Now().UTC(),
 	}
 
@@ -262,7 +262,7 @@ func (s *ConfigService) handleConfigSources(w http.ResponseWriter, r *http.Reque
 func (s *ConfigService) handleConfigValidate(w http.ResponseWriter, r *http.Request) {
 	err := s.config.Validate()
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"valid":     err == nil,
 		"timestamp": time.Now().UTC(),
 	}
