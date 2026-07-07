@@ -179,6 +179,15 @@ func (b *HTTPServerBuilder) buildHandler() http.Handler {
 		handler = b.corsMiddleware(handler)
 	}
 
+	// Bundle-registered middleware (e.g. the prometheus bundle's automatic
+	// request metrics), applied outermost so it covers every route above
+	// including health and metrics endpoints. Applied in reverse so the
+	// first-registered middleware ends up outermost.
+	middlewares := b.app.httpMiddlewareSnapshot()
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		handler = middlewares[i](handler)
+	}
+
 	return handler
 }
 

@@ -91,6 +91,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/status"
 
 	"github.com/datariot/forge/errors"
 	"github.com/datariot/forge/framework"
@@ -265,7 +267,95 @@ func (b *Bundle) Initialize(app *framework.App) error {
 		b.registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	}
 
+	// Wire the bundle's own interceptor/middleware into the framework so
+	// RecordHTTPRequest/RecordGRPCRequest are called automatically for every
+	// request, without requiring per-handler instrumentation. Manual calls to
+	// RecordHTTPRequest/RecordGRPCRequest remain supported alongside this.
+	if b.config.EnableGRPCMetrics {
+		app.AddUnaryInterceptor(b.UnaryServerInterceptor())
+		app.AddStreamInterceptor(b.StreamServerInterceptor())
+	}
+	if b.config.EnableHTTPMetrics {
+		app.AddHTTPMiddleware(b.HTTPMiddleware())
+	}
+
 	return nil
+}
+
+// UnaryServerInterceptor returns a gRPC unary server interceptor that
+// automatically records RecordGRPCRequest metrics for every unary call. The
+// status label is derived from the returned error via gRPC status codes
+// (e.g. "OK", "NotFound", "Internal"), so a nil error always records "OK".
+func (b *Bundle) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		start := time.Now()
+		resp, err := handler(ctx, req)
+		b.RecordGRPCRequest(info.FullMethod, status.Code(err).String(), time.Since(start))
+		return resp, err
+	}
+}
+
+// StreamServerInterceptor returns a gRPC stream server interceptor that
+// automatically records RecordGRPCRequest metrics for every streaming call.
+// See UnaryServerInterceptor for how the status label is derived.
+func (b *Bundle) StreamServerInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		start := time.Now()
+		err := handler(srv, ss)
+		b.RecordGRPCRequest(info.FullMethod, status.Code(err).String(), time.Since(start))
+		return err
+	}
+}
+
+// HTTPMiddleware returns HTTP middleware that automatically records
+// RecordHTTPRequest metrics for every request.
+//
+// The endpoint label prefers r.Pattern, the matched net/http.ServeMux
+// pattern (e.g. "GET /users/{id}"), which the framework's mux populates
+// before invoking the handler. That keeps the label a bounded route
+// template rather than raw concrete paths. It falls back to r.URL.Path only
+// for requests that matched no route (e.g. 404s), where cardinality is
+// naturally limited by what clients actually request.
+func (b *Bundle) HTTPMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			wrapper := &statusCapturingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+			next.ServeHTTP(wrapper, r)
+
+			endpoint := r.Pattern
+			if endpoint == "" {
+				endpoint = r.URL.Path
+			}
+			b.RecordHTTPRequest(r.Method, endpoint, wrapper.statusCode, time.Since(start))
+		})
+	}
+}
+
+// statusCapturingResponseWriter wraps http.ResponseWriter to capture the
+// final status code for metrics. framework/http.go has an equivalent
+// responseWriter for its request-logging middleware, but it is unexported
+// and package-private, so this is a small local copy rather than a shared
+// dependency across module boundaries.
+type statusCapturingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+// WriteHeader captures the status code before delegating.
+func (w *statusCapturingResponseWriter) WriteHeader(code int) {
+	w.statusCode = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// Write ensures a status code is recorded even if WriteHeader was never
+// called explicitly (the standard library implicitly writes 200 OK).
+func (w *statusCapturingResponseWriter) Write(data []byte) (int, error) {
+	if w.statusCode == 0 {
+		w.statusCode = http.StatusOK
+	}
+	return w.ResponseWriter.Write(data)
 }
 
 // Registry returns the Prometheus registry for custom metric registration.
