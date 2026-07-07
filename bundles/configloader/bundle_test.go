@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -179,6 +180,44 @@ func TestLoaderLoad_EnvVarOverride(t *testing.T) {
 	}
 	if len(result.EnvVarsUsed) == 0 {
 		t.Error("expected EnvVarsUsed to be populated")
+	}
+}
+
+// TestLoaderLoad_RedactsConnectionStringSecrets verifies that DATABASE_URL /
+// REDIS_URL style values, which embed credentials but whose field/env names
+// don't contain an obviously sensitive keyword like "password" or "secret",
+// are redacted in LoadResult.EnvVarsUsed rather than logged in cleartext.
+func TestLoaderLoad_RedactsConnectionStringSecrets(t *testing.T) {
+	type TestCfg struct {
+		DatabaseURL string `env:"TEST_DATABASE_URL_CONFIGLOADER"`
+		RedisURL    string `env:"TEST_REDIS_URL_CONFIGLOADER"`
+	}
+
+	const dbPassword = "sup3rSecretPW"
+	t.Setenv("TEST_DATABASE_URL_CONFIGLOADER", "postgres://user:"+dbPassword+"@dbhost:5432/mydb")
+	t.Setenv("TEST_REDIS_URL_CONFIGLOADER", "redis://:"+dbPassword+"@redishost:6379/0")
+
+	l := loaderWithConfig(Config{
+		ConfigPaths:       []string{"./nonexistent.yaml"},
+		RequireConfigFile: false,
+		ValidateOnLoad:    false,
+		MaxFileSize:       1024 * 1024,
+		SecureLogging:     true,
+	})
+
+	var cfg TestCfg
+	result, err := l.Load(&cfg)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(result.EnvVarsUsed) == 0 {
+		t.Fatal("expected EnvVarsUsed to be populated")
+	}
+	for _, entry := range result.EnvVarsUsed {
+		if strings.Contains(entry, dbPassword) {
+			t.Errorf("expected password to be redacted from EnvVarsUsed, got %q", entry)
+		}
 	}
 }
 
@@ -685,6 +724,61 @@ func TestLoadFromFile_RelativePath(t *testing.T) {
 	var dest map[string]interface{}
 	if err := l.loadFromFile(relPath, &dest); err != nil {
 		t.Errorf("loadFromFile with relative path failed: %v", err)
+	}
+}
+
+// TestLooksLikeSensitiveData_ConnectionStringPassword verifies that URL-shaped
+// values with embedded userinfo credentials are flagged regardless of the
+// field/env name that carries them (defense-in-depth alongside the
+// name-based keyword check).
+func TestLooksLikeSensitiveData_ConnectionStringPassword(t *testing.T) {
+	l := loaderWithConfig(DefaultConfig())
+
+	cases := []struct {
+		name     string
+		value    string
+		expected bool
+	}{
+		{"postgres with password", "postgres://user:pass@dbhost:5432/mydb", true},
+		{"redis with password only", "redis://:pass@redishost:6379/0", true},
+		{"http url without credentials", "http://example.com/path", false},
+		{"url with user but no password", "postgres://user@dbhost:5432/mydb", false},
+		{"plain non-url string", "hello", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := l.looksLikeSensitiveData(tc.value); got != tc.expected {
+				t.Errorf("looksLikeSensitiveData(%q) = %v, want %v", tc.value, got, tc.expected)
+			}
+		})
+	}
+}
+
+// TestContainsSensitiveKeyword_URLSuffix verifies the url/dsn/uri suffix
+// matching added for connection-string-style field names, and that it
+// doesn't over-match names that merely contain "url" as an infix.
+func TestContainsSensitiveKeyword_URLSuffix(t *testing.T) {
+	l := loaderWithConfig(DefaultConfig())
+
+	cases := []struct {
+		name     string
+		text     string
+		expected bool
+	}{
+		{"database_url env tag", "database_url", true},
+		{"redis_url env tag", "redis_url", true},
+		{"DatabaseURL field name lowered", "databaseurl", true},
+		{"dsn suffix", "connectiondsn", true},
+		{"plain normal field", "normal", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := l.containsSensitiveKeyword(tc.text); got != tc.expected {
+				t.Errorf("containsSensitiveKeyword(%q) = %v, want %v", tc.text, got, tc.expected)
+			}
+		})
 	}
 }
 

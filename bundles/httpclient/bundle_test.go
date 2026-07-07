@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -658,6 +659,171 @@ func TestExecuteWithRetry_ContextDeadlineExceeded(t *testing.T) {
 	}
 	if errors.Is(err, ErrMaxRetriesExceeded) {
 		t.Error("context deadline exceeded should not be reported as max retries exceeded")
+	}
+}
+
+// --- Cross-host redirect header stripping (Finding #5) ---
+
+func TestClient_CrossHostRedirect_StripsAuthHeaders(t *testing.T) {
+	var capturedAuth, capturedAPIKey string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		capturedAPIKey = r.Header.Get("X-API-Key")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/dest", http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	cfg := DefaultConfig()
+	cfg.BaseURL = redirector.URL
+	cfg.RetryConfig.MaxRetries = 0
+	cfg.CircuitBreakerConfig.Name = "test-cross-host-redirect"
+	cfg.CredentialProvider = NewStaticCredentialProvider("secret-api-key", "header.payload.signature")
+	cfg.EnableJWTAuth = true
+
+	b := NewBundle(cfg)
+	if err := b.Initialize(nil); err != nil {
+		t.Fatalf("failed to initialize bundle: %v", err)
+	}
+
+	if err := b.Client().Get(context.Background(), "/start", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedAuth != "" {
+		t.Errorf("expected Authorization header to be stripped on cross-host redirect, got %q", capturedAuth)
+	}
+	if capturedAPIKey != "" {
+		t.Errorf("expected API key header to be stripped on cross-host redirect, got %q", capturedAPIKey)
+	}
+}
+
+func TestClient_SameHostRedirect_KeepsAuthHeaders(t *testing.T) {
+	var capturedAuth, capturedAPIKey string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/dest", http.StatusFound)
+	})
+	mux.HandleFunc("/dest", func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		capturedAPIKey = r.Header.Get("X-API-Key")
+		w.WriteHeader(http.StatusOK)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	cfg := DefaultConfig()
+	cfg.BaseURL = server.URL
+	cfg.RetryConfig.MaxRetries = 0
+	cfg.CircuitBreakerConfig.Name = "test-same-host-redirect"
+	cfg.CredentialProvider = NewStaticCredentialProvider("secret-api-key", "header.payload.signature")
+	cfg.EnableJWTAuth = true
+
+	b := NewBundle(cfg)
+	if err := b.Initialize(nil); err != nil {
+		t.Fatalf("failed to initialize bundle: %v", err)
+	}
+
+	if err := b.Client().Get(context.Background(), "/start", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedAuth != "Bearer header.payload.signature" {
+		t.Errorf("expected Authorization header to be preserved on same-host redirect, got %q", capturedAuth)
+	}
+	if capturedAPIKey != "secret-api-key" {
+		t.Errorf("expected API key header to be preserved on same-host redirect, got %q", capturedAPIKey)
+	}
+}
+
+// --- logRequestError URL sanitization (Finding #12) ---
+
+func TestClient_LogRequestError_SanitizesURL(t *testing.T) {
+	client := newTestClient(t, "")
+
+	rawURL := "http://example.com/path?token=super-secret&other=1"
+	sanitized := client.sanitizeURLForLogging(rawURL)
+	if strings.Contains(sanitized, "super-secret") {
+		t.Fatalf("sanitizeURLForLogging did not redact token, got %q", sanitized)
+	}
+
+	// logRequestError must route the URL through the same sanitizer used by
+	// logRequest; exercise it directly to ensure it does not panic and
+	// completes (the logger is a no-op in tests, so we assert indirectly via
+	// sanitizeURLForLogging above and simply confirm the call is safe).
+	client.logRequestError(http.MethodGet, rawURL, time.Millisecond, errors.New("boom"))
+}
+
+// --- AllowedHosts SSRF allowlist (Finding #14) ---
+
+func TestClient_AllowedHosts_NilAllowsAnyHost(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, "")
+	if err := client.checkHostAllowed(server.URL); err != nil {
+		t.Errorf("expected nil AllowedHosts to permit any host, got: %v", err)
+	}
+}
+
+func TestClient_AllowedHosts_BlocksDisallowedHost(t *testing.T) {
+	client := newTestClient(t, "")
+	client.config.AllowedHosts = []string{"api.example.com"}
+
+	err := client.checkHostAllowed("https://evil.example.org/steal")
+	if !errors.Is(err, ErrHostNotAllowed) {
+		t.Fatalf("expected errors.Is(err, ErrHostNotAllowed), got %v", err)
+	}
+}
+
+func TestClient_AllowedHosts_AllowsListedHost(t *testing.T) {
+	client := newTestClient(t, "")
+	client.config.AllowedHosts = []string{"api.example.com"}
+
+	if err := client.checkHostAllowed("https://api.example.com/resource"); err != nil {
+		t.Errorf("expected listed host to be allowed, got: %v", err)
+	}
+}
+
+func TestClient_AllowedHosts_BlocksRawRequestToDisallowedHost(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	client := newTestClient(t, "")
+	client.config.AllowedHosts = []string{"some-other-host.invalid"}
+
+	_, err := client.RawRequest(context.Background(), http.MethodGet, target.URL, nil, nil)
+	if !errors.Is(err, ErrHostNotAllowed) {
+		t.Fatalf("expected errors.Is(err, ErrHostNotAllowed), got %v", err)
+	}
+}
+
+func TestClient_AllowedHosts_PermitsRequestToAllowedHost(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	serverHostname := strings.Split(strings.TrimPrefix(strings.TrimPrefix(server.URL, "http://"), "https://"), ":")[0]
+
+	client := newTestClient(t, server.URL)
+	client.config.AllowedHosts = []string{serverHostname}
+
+	var result map[string]bool
+	if err := client.Get(context.Background(), "/ok", &result); err != nil {
+		t.Fatalf("unexpected error for allowed host: %v", err)
+	}
+	if !result["ok"] {
+		t.Error("expected ok=true")
 	}
 }
 

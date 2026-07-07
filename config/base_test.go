@@ -183,7 +183,7 @@ func TestBaseConfig_ShouldEnableReflection(t *testing.T) {
 		explicitEnable  bool
 		expectedEnabled bool
 	}{
-		{"development implicit", "development", false, true},
+		{"development implicit", "development", false, false},
 		{"production implicit", "production", false, false},
 		{"production explicit", "production", true, true},
 		{"development explicit", "development", true, true},

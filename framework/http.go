@@ -13,6 +13,7 @@
 package framework
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -37,6 +38,12 @@ type HTTPServerConfig struct {
 	EnableMetrics    bool   `yaml:"enable_metrics" env:"ENABLE_METRICS"`
 	MetricsPath      string `yaml:"metrics_path" env:"METRICS_PATH"`
 	HealthPathPrefix string `yaml:"health_path_prefix" env:"HEALTH_PATH_PREFIX"`
+
+	// MetricsBasicAuthUser and MetricsBasicAuthPass, when both set, gate the
+	// metrics endpoint behind HTTP Basic Auth. Left empty (the default) the
+	// endpoint is unauthenticated, matching prior behavior.
+	MetricsBasicAuthUser string `yaml:"metrics_basic_auth_user" env:"METRICS_BASIC_AUTH_USER"`
+	MetricsBasicAuthPass string `yaml:"metrics_basic_auth_pass" env:"METRICS_BASIC_AUTH_PASS"`
 
 	// Request logging
 	EnableRequestLogging bool `yaml:"enable_request_logging" env:"ENABLE_REQUEST_LOGGING"`
@@ -201,15 +208,26 @@ func (b *HTTPServerBuilder) registerMetricsEndpoint() {
 		},
 	)
 
+	authEnabled := b.config.MetricsBasicAuthUser != "" && b.config.MetricsBasicAuthPass != ""
+	if authEnabled {
+		handler = b.basicAuthMiddleware(handler, b.config.MetricsBasicAuthUser, b.config.MetricsBasicAuthPass)
+	}
+
 	b.mux.Handle(path, handler)
 
 	// Security consideration logging
-	if b.app.config.IsProduction() {
+	switch {
+	case authEnabled:
+		b.logger.Info().
+			Str("path", path).
+			Str("environment", b.app.config.AppEnv).
+			Msg("Metrics endpoint registered with basic auth")
+	case b.app.config.IsProduction():
 		b.logger.Warn().
 			Str("path", path).
 			Str("environment", b.app.config.AppEnv).
-			Msg("Metrics endpoint registered in production - ensure proper network security and access controls")
-	} else {
+			Msg("Metrics endpoint registered in production without authentication - isolate it at the network layer or set MetricsBasicAuthUser/MetricsBasicAuthPass")
+	default:
 		b.logger.Info().
 			Str("path", path).
 			Str("environment", b.app.config.AppEnv).
@@ -217,21 +235,37 @@ func (b *HTTPServerBuilder) registerMetricsEndpoint() {
 	}
 }
 
+// basicAuthMiddleware guards next behind HTTP Basic Auth, comparing
+// credentials in constant time to avoid leaking their length or contents
+// via timing.
+func (b *HTTPServerBuilder) basicAuthMiddleware(next http.Handler, user, pass string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		suppliedUser, suppliedPass, ok := r.BasicAuth()
+		if !ok || !constantTimeEqual(suppliedUser, user) || !constantTimeEqual(suppliedPass, pass) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="metrics"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// constantTimeEqual reports whether a and b are equal without leaking
+// timing information about where they first differ.
+func constantTimeEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
 // registerPprofEndpoints registers debug/pprof endpoints when enabled.
 func (b *HTTPServerBuilder) registerPprofEndpoints() {
-	// SECURITY: Never enable pprof in production
-	if b.app.config.IsProduction() {
-		b.logger.Error().
-			Str("environment", b.app.config.AppEnv).
-			Msg("SECURITY ERROR: Pprof endpoints cannot be enabled in production environment")
-		return
-	}
-
-	// Additional warning for non-development environments
+	// SECURITY: Pprof is only ever served in development, regardless of the
+	// EnablePprof toggle - staging and production are both blocked since
+	// pprof exposes memory contents, goroutine stacks, and other internals.
 	if !b.app.config.IsDevelopment() {
 		b.logger.Warn().
 			Str("environment", b.app.config.AppEnv).
-			Msg("WARNING: Pprof endpoints enabled in non-development environment - ensure network security")
+			Msg("EnablePprof is set but ignored - pprof endpoints are only served in the development environment")
+		return
 	}
 
 	b.mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -336,8 +370,10 @@ func (b *HTTPServerBuilder) corsMiddleware(next http.Handler) http.Handler {
 				// Safe to use wildcard only when credentials are disabled
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 			} else {
-				// Use specific origin when credentials are enabled or specific origins are configured
+				// Use specific origin when credentials are enabled or specific origins are configured.
+				// The response varies by the reflected Origin, so caches must key on it too.
 				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Add("Vary", "Origin")
 			}
 		}
 

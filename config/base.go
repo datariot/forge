@@ -282,12 +282,11 @@ func (c *BaseConfig) IsProduction() bool {
 }
 
 // ShouldEnableReflection returns true if gRPC reflection should be enabled.
-// By default, reflection is enabled in development unless explicitly disabled.
+// Reflection exposes the full service schema and must be explicitly opted
+// into via EnableReflection (env ENABLE_REFLECTION) — it is never enabled
+// implicitly by environment, including in development.
 func (c *BaseConfig) ShouldEnableReflection() bool {
-	if c.EnableReflection {
-		return true
-	}
-	return c.IsDevelopment()
+	return c.EnableReflection
 }
 
 // Validator is an interface for configuration structs that can validate themselves.

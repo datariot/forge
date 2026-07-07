@@ -86,6 +86,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -621,12 +622,22 @@ func (l *Loader) containsSensitiveKeyword(text string) bool {
 		"auth", "cert", "private", "jwt", "oauth", "api_key",
 		"access_key", "secret_key", "private_key", "client_secret",
 		"session", "cookie", "tls", "ssl", "pgp", "gpg",
+		"dsn", "database", "redis", "conn", "connection",
 	}
 
 	for _, keyword := range sensitiveKeywords {
 		if strings.Contains(text, keyword) {
 			return true
 		}
+	}
+
+	// Connection-string-style values (e.g. DATABASE_URL, REDIS_URL,
+	// ServiceURL) are commonly named with a "url"/"uri" suffix rather than
+	// containing an obviously sensitive keyword, but frequently embed
+	// credentials. Match the suffix rather than "contains" to avoid
+	// flagging every field that merely mentions a URL in passing.
+	if strings.HasSuffix(text, "url") || strings.HasSuffix(text, "uri") {
+		return true
 	}
 	return false
 }
@@ -635,6 +646,15 @@ func (l *Loader) containsSensitiveKeyword(text string) bool {
 func (l *Loader) looksLikeSensitiveData(value string) bool {
 	if len(value) == 0 {
 		return false
+	}
+
+	// Connection-string-style URLs with embedded credentials (e.g.
+	// postgres://user:pass@host:5432/db, redis://:pass@host:6379/0) leak a
+	// password regardless of the field/env var name.
+	if u, err := url.Parse(value); err == nil && u.User != nil {
+		if _, hasPassword := u.User.Password(); hasPassword {
+			return true
+		}
 	}
 
 	// Base64-encoded data (likely sensitive)

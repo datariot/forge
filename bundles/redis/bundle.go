@@ -80,6 +80,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -597,6 +598,7 @@ func (l *DistributedLock) Unlock(ctx context.Context) error {
 type RateLimiter struct {
 	client redis.UniversalClient
 	prefix string
+	seq    atomic.Uint64
 }
 
 // NewRateLimiter creates a new Redis-based rate limiter.
@@ -607,11 +609,26 @@ func (b *Bundle) NewRateLimiter(prefix string) *RateLimiter {
 	}
 }
 
+// rateLimitMember builds a unique ZSET member for a rate-limit request whose
+// score is the request timestamp. The timestamp alone is not safe to use as
+// the member: ZADD treats the member as the entry's identity, so two calls
+// that land on the same timestamp (routine under concurrent load, since
+// UnixNano has finite resolution) would collapse into a single ZSET entry
+// and silently undercount requests. Appending the process id and a
+// monotonically increasing per-process sequence number keeps every call's
+// member distinct, both within this process and across replicas, while the
+// score (now) still drives ZREMRANGEBYSCORE window trimming and ZCARD
+// counting.
+func rateLimitMember(now time.Time, pid int, seq uint64) string {
+	return fmt.Sprintf("%d-%d-%d", now.UnixNano(), pid, seq)
+}
+
 // Allow checks if a request is allowed under the rate limit using atomic Lua script.
 func (r *RateLimiter) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, error) {
 	now := time.Now()
 	windowStart := now.Add(-window)
 	fullKey := fmt.Sprintf("%s:%s", r.prefix, key)
+	member := rateLimitMember(now, os.Getpid(), r.seq.Add(1))
 
 	// Atomic rate limiting with Lua script
 	script := `
@@ -620,6 +637,7 @@ func (r *RateLimiter) Allow(ctx context.Context, key string, limit int, window t
 		local window_start = tonumber(ARGV[2])
 		local limit = tonumber(ARGV[3])
 		local window_seconds = tonumber(ARGV[4])
+		local member = ARGV[5]
 
 		-- Remove expired entries
 		redis.call('ZREMRANGEBYSCORE', key, 0, window_start)
@@ -630,8 +648,8 @@ func (r *RateLimiter) Allow(ctx context.Context, key string, limit int, window t
 			return 0  -- Denied
 		end
 
-		-- Add current request and set expiry
-		redis.call('ZADD', key, now, now)
+		-- Add current request (unique member, score = timestamp) and set expiry
+		redis.call('ZADD', key, now, member)
 		redis.call('EXPIRE', key, math.ceil(window_seconds))
 
 		return 1  -- Allowed
@@ -642,6 +660,7 @@ func (r *RateLimiter) Allow(ctx context.Context, key string, limit int, window t
 		windowStart.UnixNano(),
 		limit,
 		window.Seconds(),
+		member,
 	).Result()
 
 	if err != nil {

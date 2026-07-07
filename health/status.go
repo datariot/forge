@@ -62,6 +62,25 @@ func (h HealthStatus) String() string {
 	return string(data)
 }
 
+// Redacted returns a copy of the HealthStatus safe for exposure over
+// unauthenticated interfaces such as the public HTTP health endpoints.
+// Every entry in Details has its raw error detail stripped via
+// CheckResult.Redacted, while the overall Status, Message, and per-check
+// name/status/duration/required metadata are preserved.
+func (h HealthStatus) Redacted() HealthStatus {
+	if len(h.Details) == 0 {
+		return h
+	}
+
+	redacted := make(map[string]CheckResult, len(h.Details))
+	for name, result := range h.Details {
+		redacted[name] = result.Redacted()
+	}
+	h.Details = redacted
+
+	return h
+}
+
 // FailedChecks returns a slice of check results that failed.
 func (h HealthStatus) FailedChecks() []CheckResult {
 	var failed []CheckResult
