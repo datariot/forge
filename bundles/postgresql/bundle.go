@@ -116,7 +116,10 @@ func (b *Bundle) Name() string {
 	return "postgresql"
 }
 
-// Initialize sets up the PostgreSQL connection and performs migrations if configured.
+// Initialize validates the configuration, opens the PostgreSQL connection
+// pool, applies the configured pool limits, and verifies connectivity with a
+// ping before the bundle is considered ready. It does not run migrations,
+// which are treated as a deployment concern (see the package documentation).
 func (b *Bundle) Initialize(app *framework.App) error {
 	if b.config.DatabaseURL == "" {
 		return forgeerrors.ErrInvalidConfiguration.WithMessage("database_url is required for PostgreSQL bundle")

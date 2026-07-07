@@ -205,7 +205,10 @@ func (b *Bundle) Name() string {
 	return "jwt-auth"
 }
 
-// Initialize sets up JWT authentication.
+// Initialize validates the JWT configuration during application startup. The
+// bundle holds no external resources, so no connections are opened here; the
+// interceptors and middleware it exposes must be wired into the framework
+// explicitly by the caller.
 func (b *Bundle) Initialize(app *framework.App) error {
 	if err := b.config.Validate(); err != nil {
 		return forgeerrors.ErrInvalidConfiguration.WithMessage("JWT configuration validation failed").WithCause(err)
@@ -571,7 +574,10 @@ func HasPermission(ctx context.Context, permission string) bool {
 	return false
 }
 
-// ServiceID returns the authenticated service ID from context.
+// ServiceID extracts the caller's service ID from a context that the JWT
+// server interceptor (or HTTP middleware) previously populated with validated
+// claims. It returns the empty string when the context carries no claims, so
+// callers can use it for logging or coarse authorization without a nil check.
 func ServiceID(ctx context.Context) string {
 	claims := ClaimsFromContext(ctx)
 	if claims == nil {
@@ -580,7 +586,10 @@ func ServiceID(ctx context.Context) string {
 	return claims.ServiceID
 }
 
-// ServiceName returns the authenticated service name from context.
+// ServiceName extracts the caller's service name from a context that the JWT
+// server interceptor (or HTTP middleware) previously populated with validated
+// claims. It returns the empty string when the context carries no claims, so
+// callers can use it for logging or coarse authorization without a nil check.
 func ServiceName(ctx context.Context) string {
 	claims := ClaimsFromContext(ctx)
 	if claims == nil {
@@ -593,7 +602,12 @@ func ServiceName(ctx context.Context) string {
 type claimsContextKeyType struct{}
 
 // TokenValidator provides an interface for custom token validation logic.
+// Implementations can enforce application-specific rules (for example
+// revocation checks or per-tenant policy) on top of the bundle's standard
+// signature, expiry, audience, and issuer validation.
 type TokenValidator interface {
+	// ValidateToken applies custom validation to already-parsed claims and
+	// returns a non-nil error to reject the token.
 	ValidateToken(ctx context.Context, claims *ServiceClaims) error
 }
 
