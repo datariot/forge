@@ -64,7 +64,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/datariot/forge/errors"
 	"github.com/datariot/forge/framework"
@@ -143,7 +143,7 @@ func (b *Bundle) Initialize(app *framework.App) error {
 	}
 
 	// Open database connection
-	db, err := sql.Open("postgres", b.config.DatabaseURL)
+	db, err := sql.Open("pgx", b.config.DatabaseURL)
 	if err != nil {
 		return errors.ErrRepositoryUnavailable.WithMessage("failed to open PostgreSQL connection").WithCause(err)
 	}

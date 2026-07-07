@@ -253,9 +253,11 @@ type App struct {
 	shutdownHooks []ShutdownHook
 
 	// Lifecycle
-	mu       sync.RWMutex
-	running  bool
-	stopping bool
+	mu            sync.RWMutex
+	running       bool
+	starting      bool
+	stopping      bool
+	readinessStop chan struct{}
 }
 
 // AppOption configures the App during creation.
@@ -321,6 +323,44 @@ func WithConfig(config *config.BaseConfig) AppOption {
 			return fmt.Errorf("config cannot be nil")
 		}
 		app.config = config
+		return nil
+	}
+}
+
+// WithLogging injects a custom logging manager, overriding the framework's
+// built-in default (a LoggingManager derived from the app config).
+func WithLogging(logging *LoggingManager) AppOption {
+	return func(app *App) error {
+		if logging == nil {
+			return fmt.Errorf("logging manager cannot be nil")
+		}
+		app.logging = logging
+		return nil
+	}
+}
+
+// WithObservability injects a custom observability manager, overriding the
+// framework's built-in default (an ObservabilityManager derived from the app
+// config and version).
+func WithObservability(observability *ObservabilityManager) AppOption {
+	return func(app *App) error {
+		if observability == nil {
+			return fmt.Errorf("observability manager cannot be nil")
+		}
+		app.observability = observability
+		return nil
+	}
+}
+
+// WithHealthRegistry injects a custom health registry, overriding the
+// framework's built-in default (a forgeHealth.Registry logging through the
+// app's logging manager).
+func WithHealthRegistry(registry *forgeHealth.Registry) AppOption {
+	return func(app *App) error {
+		if registry == nil {
+			return fmt.Errorf("health registry cannot be nil")
+		}
+		app.healthRegistry = registry
 		return nil
 	}
 }
@@ -460,6 +500,11 @@ func (a *App) HealthRegistry() *forgeHealth.Registry {
 	return a.healthRegistry
 }
 
+// Observability returns the observability manager.
+func (a *App) Observability() *ObservabilityManager {
+	return a.observability
+}
+
 // IsRunning returns true if the application is running.
 func (a *App) IsRunning() bool {
 	a.mu.RLock()
@@ -519,13 +564,34 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 // Start starts all application components.
+//
+// The app mutex is held only long enough to claim the starting state, not
+// across the (I/O-bound) bundle, server, and component startup below: a
+// component that calls IsRunning/IsStopping from its own Start would
+// otherwise deadlock against this method holding the lock for the whole
+// startup sequence. The lock is re-acquired only to record the outcome.
 func (a *App) Start(ctx context.Context) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	if a.running {
+	if a.running || a.starting {
+		a.mu.Unlock()
 		return fmt.Errorf("application is already running")
 	}
+	if a.stopping {
+		a.mu.Unlock()
+		return fmt.Errorf("application is stopping")
+	}
+	a.starting = true
+	a.mu.Unlock()
+
+	started := false
+	defer func() {
+		a.mu.Lock()
+		a.starting = false
+		if started {
+			a.running = true
+		}
+		a.mu.Unlock()
+	}()
 
 	logger := a.logging.WithService(a.config.ServiceName, "start")
 
@@ -585,16 +651,26 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	}
 
-	// Mark service as ready after initial delay
+	// Mark service as ready after initial delay. The delay is cancellable so
+	// that a Stop() during the delay window prevents the flip to ready:
+	// without this, a slow-starting service could be marked ready after it
+	// has already begun shutting down.
 	if a.config.ReadinessInitialDelay > 0 {
-		go func() {
-			time.Sleep(a.config.ReadinessInitialDelay)
-			a.healthRegistry.SetReady(true)
-			a.updateGRPCHealthStatus()
-			logger.Info().
-				Dur("delay", a.config.ReadinessInitialDelay).
-				Msg("Service marked as ready")
-		}()
+		delay := a.config.ReadinessInitialDelay
+		a.readinessStop = make(chan struct{})
+		go func(stop <-chan struct{}) {
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+
+			select {
+			case <-stop:
+				return
+			case <-timer.C:
+				a.healthRegistry.SetReady(true)
+				a.updateGRPCHealthStatus()
+				logger.Info().Dur("delay", delay).Msg("Service marked as ready")
+			}
+		}(a.readinessStop)
 	} else {
 		a.healthRegistry.SetReady(true)
 		a.updateGRPCHealthStatus()
@@ -608,7 +684,7 @@ func (a *App) Start(ctx context.Context) error {
 		go a.syncGRPCHealthLoop(a.grpcHealthSyncStop)
 	}
 
-	a.running = true
+	started = true
 	logger.Info().Msg("Service started successfully")
 
 	return nil
@@ -632,6 +708,13 @@ func (a *App) Stop(ctx context.Context) error {
 	// Mark service as not ready immediately
 	a.healthRegistry.SetReady(false)
 	a.updateGRPCHealthStatus()
+
+	// Cancel a pending readiness-delay flip, if any, so it can't race this
+	// SetReady(false) and mark the service ready again after shutdown began.
+	if a.readinessStop != nil {
+		close(a.readinessStop)
+		a.readinessStop = nil
+	}
 
 	if a.grpcHealthSyncStop != nil {
 		close(a.grpcHealthSyncStop)

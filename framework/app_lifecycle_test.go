@@ -2,6 +2,9 @@ package framework
 
 import (
 	"context"
+	"runtime"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -500,6 +503,202 @@ func TestApp_Lifecycle_HTTPOnlyMode(t *testing.T) {
 
 	if app.IsRunning() {
 		t.Error("App should not be running after Stop()")
+	}
+}
+
+// TestApp_Lifecycle_ComponentCallingIsRunningDuringStart verifies that a
+// component calling IsRunning()/IsStopping() from its own Start() does not
+// deadlock against App.Start() holding the app mutex across startup.
+func TestApp_Lifecycle_ComponentCallingIsRunningDuringStart(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "is-running-during-start-test"
+	cfg.GRPCAddr = ":0"
+	cfg.HTTPAddr = ":0"
+
+	comp := &isRunningCallingComponent{}
+
+	app, err := New(
+		WithConfig(&cfg),
+		WithComponent(comp),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create app: %v", err)
+	}
+	comp.app = app
+
+	startErr := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		startErr <- app.Start(ctx)
+	}()
+
+	select {
+	case err := <-startErr:
+		if err != nil {
+			t.Fatalf("Start returned an error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start deadlocked when a component called IsRunning/IsStopping from its own Start")
+	}
+
+	if !comp.called {
+		t.Fatal("expected component Start to have been called")
+	}
+	if comp.sawRunning {
+		t.Error("expected IsRunning() to report false while the app is still starting")
+	}
+	if comp.sawStopping {
+		t.Error("expected IsStopping() to report false during normal startup")
+	}
+
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopCancel()
+	if err := app.Stop(stopCtx); err != nil {
+		t.Errorf("Failed to stop app: %v", err)
+	}
+}
+
+type isRunningCallingComponent struct {
+	app         *App
+	called      bool
+	sawRunning  bool
+	sawStopping bool
+}
+
+func (c *isRunningCallingComponent) Start(ctx context.Context) error {
+	c.called = true
+	c.sawRunning = c.app.IsRunning()
+	c.sawStopping = c.app.IsStopping()
+	return nil
+}
+
+func (c *isRunningCallingComponent) Stop(ctx context.Context) error {
+	return nil
+}
+
+// TestApp_Lifecycle_ConcurrentStartRejected verifies that a second concurrent
+// Start() call is rejected while the first is still in flight, rather than
+// both proceeding or racing on the running/starting state.
+func TestApp_Lifecycle_ConcurrentStartRejected(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "concurrent-start-test"
+	cfg.GRPCAddr = ":0"
+	cfg.HTTPAddr = ":0"
+
+	slow := &TestComponentWithCallbacks{
+		startFn: func() error {
+			time.Sleep(200 * time.Millisecond)
+			return nil
+		},
+	}
+
+	app, err := New(
+		WithConfig(&cfg),
+		WithComponent(slow),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create app: %v", err)
+	}
+
+	const attempts = 2
+	errs := make([]error, attempts)
+
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			errs[idx] = app.Start(ctx)
+		}(i)
+	}
+	wg.Wait()
+
+	successes, failures := 0, 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case strings.Contains(err.Error(), "already running"):
+			failures++
+		default:
+			t.Errorf("unexpected Start error: %v", err)
+		}
+	}
+
+	if successes != 1 || failures != 1 {
+		t.Fatalf("expected exactly one Start to succeed and one to be rejected, got %d successes and %d failures", successes, failures)
+	}
+
+	if !app.IsRunning() {
+		t.Error("expected app to be running after the concurrent Start calls settle")
+	}
+
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopCancel()
+	if err := app.Stop(stopCtx); err != nil {
+		t.Errorf("Failed to stop app: %v", err)
+	}
+}
+
+// TestApp_Lifecycle_ReadinessDelay_StopCancelsReadyFlip verifies that calling
+// Stop() while a ReadinessInitialDelay is pending prevents the delayed
+// SetReady(true) from firing after shutdown has begun, and that the delay
+// goroutine exits promptly instead of leaking.
+func TestApp_Lifecycle_ReadinessDelay_StopCancelsReadyFlip(t *testing.T) {
+	cfg := config.DefaultBaseConfig()
+	cfg.ServiceName = "readiness-delay-stop-test"
+	cfg.GRPCAddr = ":0"
+	cfg.HTTPAddr = ":0"
+	cfg.ReadinessInitialDelay = 150 * time.Millisecond
+
+	baseline := runtime.NumGoroutine()
+
+	app, err := New(WithConfig(&cfg))
+	if err != nil {
+		t.Fatalf("Failed to create app: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := app.Start(ctx); err != nil {
+		t.Fatalf("Failed to start app: %v", err)
+	}
+
+	if app.HealthRegistry().IsReady() {
+		t.Fatal("expected service to not be ready immediately after Start with a readiness delay configured")
+	}
+
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopCancel()
+	if err := app.Stop(stopCtx); err != nil {
+		t.Fatalf("Failed to stop app: %v", err)
+	}
+
+	if app.HealthRegistry().IsReady() {
+		t.Error("expected service to not be ready immediately after Stop")
+	}
+
+	// Wait past the original delay to make sure the cancelled goroutine never
+	// fires the delayed SetReady(true).
+	time.Sleep(cfg.ReadinessInitialDelay * 3)
+
+	if app.HealthRegistry().IsReady() {
+		t.Error("expected readiness delay goroutine to not mark the service ready after Stop")
+	}
+
+	// Bounded wait for the goroutine population to settle back near baseline,
+	// confirming the readiness delay goroutine (and everything else spun up
+	// by Start/Stop) actually exited rather than leaking.
+	deadline := time.Now().Add(2 * time.Second)
+	for runtime.NumGoroutine() > baseline+2 {
+		if time.Now().After(deadline) {
+			t.Errorf("goroutine count did not settle after Stop: baseline=%d, current=%d", baseline, runtime.NumGoroutine())
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
