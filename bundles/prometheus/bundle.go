@@ -358,6 +358,21 @@ func (w *statusCapturingResponseWriter) Write(data []byte) (int, error) {
 	return w.ResponseWriter.Write(data)
 }
 
+// Unwrap returns the underlying ResponseWriter so http.ResponseController can
+// reach its optional methods (SetWriteDeadline, Hijack, ...).
+func (w *statusCapturingResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+// Flush implements http.Flusher by delegating to the underlying writer, and is
+// a no-op when it cannot flush. statusCode already defaults to 200, matching
+// the implicit 200 header net/http sends on a flush before any Write.
+func (w *statusCapturingResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // Registry returns the Prometheus registry for custom metric registration.
 func (b *Bundle) Registry() prometheus.Registerer {
 	return b.registry

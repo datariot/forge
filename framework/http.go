@@ -438,6 +438,21 @@ func (rw *responseWriter) Write(data []byte) (int, error) {
 	return rw.ResponseWriter.Write(data)
 }
 
+// Unwrap returns the underlying ResponseWriter so http.ResponseController can
+// reach its optional methods (SetWriteDeadline, EnableFullDuplex, Hijack, ...).
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
+// Flush implements http.Flusher by delegating to the underlying writer, and is
+// a no-op when it cannot flush. statusCode already defaults to 200, matching
+// the implicit 200 header net/http sends on a flush before any Write.
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // promLogAdapter adapts zerolog.Logger to the log.Logger interface required by Prometheus.
 type promLogAdapter struct {
 	logger zerolog.Logger

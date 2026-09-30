@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **framework, prometheus:** The request-logging and request-metrics response-writer wrappers now implement `Unwrap()` and `Flush()`, so `http.NewResponseController` (e.g. `SetWriteDeadline` for long streams) and `http.Flusher` work through the middleware.
+
 ### Added
 - **framework:** `AddUnaryInterceptor`, `AddStreamInterceptor`, and `AddHTTPMiddleware` on `App` — bundles can register gRPC interceptors and HTTP middleware during `Initialize`.
 - **framework:** `WithLogging`, `WithObservability`, and `WithHealthRegistry` options to inject custom infrastructure managers, plus an `Observability()` accessor.
