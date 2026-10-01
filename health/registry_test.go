@@ -528,6 +528,34 @@ func (c *gatedCheck) probe(ctx context.Context) error {
 func (c *gatedCheck) Liveness(ctx context.Context) error  { return c.probe(ctx) }
 func (c *gatedCheck) Readiness(ctx context.Context) error { return c.probe(ctx) }
 
+// waitHealthy polls probe until it reports healthy, failing after 2s. Each
+// read must return within 500ms: probes serve the cached result and never
+// wait on an in-flight check. Polling, not a single read, because
+// firstRoundDone closes when a check's last probe of the round starts, a
+// moment before the runner stores its result; a single read raced that on
+// a loaded box (minis, 2026-10-01).
+func waitHealthy(t *testing.T, probe func(context.Context) Report, what string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		done := make(chan Report, 1)
+		go func() { done <- probe(context.Background()) }()
+		var status Report
+		select {
+		case status = <-done:
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("%s: the probe blocked on an in-flight check instead of serving the cache", what)
+		}
+		if status.Status == StatusHealthy {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s: still %s after 2s (details: %+v)", what, status.Status, status.Details)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // waitClosed waits for ch to be closed, failing the test if it isn't within d.
 func waitClosed(t *testing.T, ch chan struct{}, d time.Duration, what string) {
 	t.Helper()
@@ -575,17 +603,7 @@ func TestRegistry_Runner_CachesResultsAndServesStaleReads(t *testing.T) {
 	// The second round is now in flight and will block forever (until
 	// ctx/Stop cancellation). A probe read must not wait for it - it
 	// should return the still-healthy result from the first round.
-	done := make(chan Report, 1)
-	go func() { done <- registry.CheckReadiness(context.Background()) }()
-
-	select {
-	case status := <-done:
-		if status.Status != StatusHealthy {
-			t.Errorf("expected cached status healthy, got %s (details: %+v)", status.Status, status.Details)
-		}
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("CheckReadiness blocked on the in-flight (hanging) check instead of serving the cache")
-	}
+	waitHealthy(t, registry.CheckReadiness, "cached readiness after the first round")
 }
 
 // TestRegistry_Runner_PreFirstRoundReadinessNotReady verifies that a probe
@@ -657,10 +675,7 @@ func TestRegistry_Runner_LateRegisteredCheckGetsScheduled(t *testing.T) {
 
 	waitClosed(t, check.firstRoundDone, 2*time.Second, "late-registered check's first background round")
 
-	status := registry.CheckLiveness(context.Background())
-	if status.Status != StatusHealthy {
-		t.Errorf("expected late-registered check to report healthy after its round, got %s", status.Status)
-	}
+	waitHealthy(t, registry.CheckLiveness, "late-registered check's liveness after its round")
 }
 
 // TestRegistry_Stop_NoGoroutineLeak verifies that Stop terminates all
