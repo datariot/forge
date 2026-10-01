@@ -10,6 +10,8 @@ Forge is a batteries-included Go framework for building production-ready microse
 
 ## Common Commands
 
+`scripts/gate.sh` is the merge gate (what CI and the escapement kernel run): gofmt, vet, build, `go test -race` with the 70% coverage floor, and every example builds.
+
 [Taskfile](https://taskfile.dev) equivalents exist for all of these (`task --list`); the raw Go commands below work without it.
 
 ### Building and Testing
