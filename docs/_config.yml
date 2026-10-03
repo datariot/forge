@@ -23,6 +23,7 @@ plugins:
 # Navigation
 header_pages:
   - getting-started.md
+  - architecture.md
   - bundles.md
   - examples.md
   - api-reference.md
